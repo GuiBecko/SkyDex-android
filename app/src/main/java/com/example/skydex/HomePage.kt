@@ -1,15 +1,19 @@
 package com.example.skydex // Mude para o pacote correto do seu projeto
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Dataset
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -20,52 +24,102 @@ import androidx.compose.ui.unit.sp
 
 
 @Composable
+fun FooterSection(
+	abaAtual: String, // Nova variável para o Footer saber quem está ativo!
+	aoClicarHome: () -> Unit,
+	aoClicarNearEvents: () -> Unit,
+	aoClicarMyRegistros: () -> Unit
+){
+	// Cores do seu app (usando o azul que você colocou no botão da Home)
+	val corAtiva = Color(0xFF0284C7)
+	val corInativa = Color.Gray
+
+	Row (
+		modifier = Modifier
+			.fillMaxWidth()
+			.background(Color.White)
+			.navigationBarsPadding()
+			.padding(16.dp),
+		verticalAlignment = Alignment.CenterVertically
+	){
+		// --- COLUNA 1: EVENTOS ---
+		Column(
+			modifier = Modifier.weight(1f),
+			horizontalAlignment = Alignment.Start
+		) {
+			// Animadores de Cor e Tamanho
+			val isSelected = abaAtual == "eventos"
+			val iconColor by animateColorAsState(if (isSelected) corAtiva else corInativa, label = "corEventos")
+			val iconSize by animateDpAsState(if (isSelected) 36.dp else 28.dp, label = "tamanhoEventos")
+
+			IconButton(onClick = aoClicarNearEvents) {
+				Icon(
+					modifier = Modifier.size(iconSize), // Usa o tamanho animado
+					imageVector = Icons.Default.WbSunny,
+					contentDescription = "Eventos Próximos",
+					tint = iconColor // Usa a cor animada
+				)
+			}
+		}
+
+		// --- COLUNA 2: HOME ---
+		Column(
+			modifier = Modifier.weight(1f),
+			horizontalAlignment = Alignment.CenterHorizontally
+		) {
+			val isSelected = abaAtual == "home"
+			val iconColor by animateColorAsState(if (isSelected) corAtiva else corInativa, label = "corHome")
+			val iconSize by animateDpAsState(if (isSelected) 36.dp else 28.dp, label = "tamanhoHome")
+
+			IconButton(onClick = aoClicarHome) {
+				Icon(
+					modifier = Modifier.size(iconSize),
+					imageVector = Icons.Default.Home,
+					contentDescription = "Homepage",
+					tint = iconColor
+				)
+			}
+		}
+
+		// --- COLUNA 3: REGISTROS ---
+		Column(
+			modifier = Modifier.weight(1f),
+			horizontalAlignment = Alignment.End
+		) {
+			val isSelected = abaAtual == "meus registros"
+			val iconColor by animateColorAsState(if (isSelected) corAtiva else corInativa, label = "corRegistros")
+			val iconSize by animateDpAsState(if (isSelected) 36.dp else 28.dp, label = "tamanhoRegistros")
+
+			IconButton(onClick = aoClicarMyRegistros) {
+				Icon(
+					modifier = Modifier.size(iconSize),
+					imageVector = Icons.Default.Dataset,
+					contentDescription = "Meus Registros",
+					tint = iconColor
+				)
+			}
+		}
+	}
+}
+@Composable
 fun BuildHomeScreen(modifier: Modifier = Modifier) {
-	// LazyColumn é o equivalente a uma lista com "overflow-y: auto".
-	// Ele só renderiza o que aparece na tela, otimizando a memória.
 	LazyColumn(
 		modifier = modifier
 			.fillMaxSize() // width: 100%, height: 100%
 			.background(Color(0xFFF3F4F6)) // Cor de fundo leve (cinza claro)
-			.padding(16.dp), // padding: 16px
+			.padding(16.dp),
 		verticalArrangement = Arrangement.spacedBy(24.dp) // gap: 24px entre as seções
 	) {
 		// Seção 1: Cabeçalho (Boas-vindas)
 		item {
 			CabecalhoSection()
 		}
-
 		// Seção 2: Call to Action (Botão de registrar novo evento)
 		item {
 			CardAcaoPrincipal()
 		}
-
-		// Seção 3: Título da lista de eventos recentes
-		item {
-			Text(
-				text = "Eventos Recentes",
-				fontSize = 20.sp,
-				fontWeight = FontWeight.Bold,
-				color = Color.DarkGray
-			)
-		}
-
-		// Seção 4: Lista de cards com os eventos (Mock de dados)
-		val eventosMock = listOf(
-			EventoMeteorologico("Tempestade Severa", "Ventos de 80km/h", "Hoje, 14:30"),
-			EventoMeteorologico("Granizo", "Pedras de 3cm", "Ontem, 18:15"),
-			EventoMeteorologico("Seca Extrema", "Umidade abaixo de 15%", "18/07/2026")
-		)
-
-		// Renderiza um card para cada item da lista (equivalente a um .map() no React)
-		items(eventosMock) { evento ->
-			EventoCard(evento)
-			Spacer(modifier = Modifier.height(8.dp)) // Espaço entre os cards
-		}
 	}
 }
-
-// --- COMPONENTES MENORES (Isolados para manter o código limpo) ---
 
 @Composable
 fun CabecalhoSection() {
@@ -84,6 +138,7 @@ fun CabecalhoSection() {
 		)
 	}
 }
+
 
 @Composable
 fun CardAcaoPrincipal() {
@@ -121,38 +176,17 @@ fun CardAcaoPrincipal() {
 	}
 }
 
-@Composable
-fun EventoCard(evento: EventoMeteorologico) {
-	Card(
-		modifier = Modifier.fillMaxWidth(),
-		colors = CardDefaults.cardColors(containerColor = Color.White),
-		elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-	) {
-		Row(
-			modifier = Modifier
-				.padding(16.dp)
-				.fillMaxWidth(),
-			horizontalArrangement = Arrangement.SpaceBetween, // justify-content: space-between
-			verticalAlignment = Alignment.CenterVertically
-		) {
-			Column {
-				Text(text = evento.titulo, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-				Text(text = evento.descricao, color = Color.Gray, fontSize = 14.sp)
-			}
-			Column(horizontalAlignment = Alignment.End) {
-				Icon(imageVector = Icons.Default.LocationOn, contentDescription = "Local", tint = Color.Red)
-				Text(text = evento.data, fontSize = 12.sp, color = Color.Gray)
-			}
-		}
-	}
-}
-
-// Classe de dados simples (equivalente a uma interface/type no TypeScript)
-data class EventoMeteorologico(val titulo: String, val descricao: String, val data: String)
-
-// Esta função permite que você veja a tela no painel "Design" do Android Studio sem precisar rodar no emulador!
 @Preview(showBackground = true)
 @Composable
 fun BuildHomeScreenPreview() {
-	BuildHomeScreen()
+	Scaffold(
+		bottomBar = {FooterSection(
+			aoClicarNearEvents = {},
+			aoClicarHome = {},
+			aoClicarMyRegistros = {},
+			abaAtual = "home"
+		)}
+	) { innerPadding ->
+		BuildHomeScreen(modifier = Modifier.padding(innerPadding))
+	}
 }
