@@ -1,6 +1,13 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+}
+val properties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    properties.load(localPropertiesFile.inputStream())
 }
 
 android {
@@ -19,6 +26,8 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        val apiUrl = properties.getProperty("API_BASE_URL") ?: "\"http://<host>:8080\""
+        buildConfigField("String", "BASE_URL", apiUrl)
     }
 
     buildTypes {
@@ -34,6 +43,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -48,6 +58,12 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
 	implementation("androidx.compose.material:material-icons-extended")
+    // Interceptor para ver os logs das requisições
+    implementation("com.squareup.okhttp3:logging-interceptor:4.11.0")
+    // Retrofit para requisições
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    // Gson para converter o JSON da sua API para classes Kotlin
+    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
