@@ -10,10 +10,11 @@ import retrofit2.http.POST
 import retrofit2.http.Path
 
 interface SkyDexApi {
-    @GET("/api/eventos")
-    suspend fun listarEventos(
+    @GET("/api/users/{id}/eventos")
+    suspend fun listarUserEvents(
+        @Path("id") userId: String,
         @Header("Authorization") token: String
-    ): List<EventoRequest>
+    ): List<EventoResponse>
 
     @POST("/api/eventos")
     suspend fun criarRegistro(

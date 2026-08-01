@@ -15,6 +15,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.skydex.ui.theme.SkyDexTheme
+import com.example.skydex.ui.theme.pages.BuildHomeScreen
+import com.example.skydex.ui.theme.pages.FooterSection
+import com.example.skydex.ui.theme.pages.NearEvents
+import com.example.skydex.ui.theme.pages.Registers
 
 class MainActivity : ComponentActivity() {
 	override fun onCreate(savedInstanceState: Bundle?) {
@@ -29,15 +33,15 @@ class MainActivity : ComponentActivity() {
 				Scaffold(
 					modifier = Modifier.fillMaxSize(),
 					bottomBar = {
-						FooterSection(
-							abaAtual = telaAtual,
-							// Quando clicar na casinha, muda a variável para "home"
-							aoClicarHome = { telaAtual = "home" },
-							// Quando clicar no sol, muda a variável para "eventos"
-							aoClicarNearEvents = { telaAtual = "eventos" },
-							// Quando clicar no dashboard, muda a variável para "meus registros"
-							aoClicarMyRegistros = {telaAtual = "meus registros"}
-						)
+                        FooterSection(
+                            abaAtual = telaAtual,
+                            // Quando clicar na casinha, muda a variável para "home"
+                            aoClicarHome = { telaAtual = "home" },
+                            // Quando clicar no sol, muda a variável para "eventos"
+                            aoClicarNearEvents = { telaAtual = "eventos" },
+                            // Quando clicar no dashboard, muda a variável para "meus registros"
+                            aoClicarMyRegistros = { telaAtual = "meus registros" }
+                        )
 					}
 				) { innerPadding ->
 
@@ -62,13 +66,13 @@ fun AppCompletoPreview() {
 	Scaffold(
 		modifier = Modifier.fillMaxSize(),
 		bottomBar = {
-			FooterSection(
-				abaAtual = telaAtual,
-				// 2. Agora os cliques mudam a variável do Preview!
-				aoClicarHome = { telaAtual = "home" },
-				aoClicarNearEvents = { telaAtual = "eventos" },
-				aoClicarMyRegistros = { telaAtual = "meus registros"}
-			)
+            FooterSection(
+                abaAtual = telaAtual,
+                // 2. Agora os cliques mudam a variável do Preview!
+                aoClicarHome = { telaAtual = "home" },
+                aoClicarNearEvents = { telaAtual = "eventos" },
+                aoClicarMyRegistros = { telaAtual = "meus registros" }
+            )
 		}
 	) { innerPadding ->
 		// 3. O Compose do Preview vai reagir a essa troca

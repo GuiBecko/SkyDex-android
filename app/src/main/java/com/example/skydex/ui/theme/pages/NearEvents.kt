@@ -1,22 +1,16 @@
-package com.example.skydex
+package com.example.skydex.ui.theme.pages
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Dataset
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.modifier.ModifierLocalReadScope
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -88,12 +82,14 @@ data class EventoMeteorologico(val titulo: String, val descricao: String, val da
 @Composable
 fun NearEventsPreview() {
 	Scaffold(
-		bottomBar = { FooterSection(
-			aoClicarNearEvents = {},
-			aoClicarHome = {},
-			aoClicarMyRegistros = {},
-			abaAtual = "eventos"
-		) }
+		bottomBar = {
+            FooterSection(
+                aoClicarNearEvents = {},
+                aoClicarHome = {},
+                aoClicarMyRegistros = {},
+                abaAtual = "eventos"
+            )
+        }
 		) { innerPadding ->
 		NearEvents(modifier = Modifier.padding(innerPadding))
 	}
