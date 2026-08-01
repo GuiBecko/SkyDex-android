@@ -8,7 +8,8 @@ import kotlin.uuid.Uuid
 data class EventoRequest (
     var titulo: String,
     var descricao: String,
-    var urlFoto: String
+    var urlFoto: String,
+    var userId: String
 )
 
 // RESPOSTA DA API

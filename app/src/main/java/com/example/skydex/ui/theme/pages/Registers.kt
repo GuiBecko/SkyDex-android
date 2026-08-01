@@ -29,9 +29,8 @@ fun Registers(modifier: Modifier = Modifier) {
 	LaunchedEffect(Unit) {
 		isLoading = true
 		try {
-
 			val meuTokenJwt = "Bearer <token>"
-			val myUserId = "b7ad8bb3-d1e6-4e19-964e-3cd3d60f4988"
+			val myUserId = "9d5e6132-b3b7-4bb3-9659-47a5d10e83f4"
 
 			val resposta = RetrofitClient.api.listarUserEvents(myUserId, meuTokenJwt)
 			registros = resposta

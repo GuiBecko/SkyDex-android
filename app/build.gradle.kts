@@ -57,6 +57,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
 	implementation("androidx.compose.material:material-icons-extended")
     // Interceptor para ver os logs das requisições
     implementation("com.squareup.okhttp3:logging-interceptor:4.11.0")

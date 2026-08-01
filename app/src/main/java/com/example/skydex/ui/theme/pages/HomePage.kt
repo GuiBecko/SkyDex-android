@@ -214,7 +214,8 @@ fun CardAcaoPrincipal() {
 						val novoEvento = EventoRequest(
 							titulo = titulo,
 							descricao = descricao,
-							urlFoto = urlFoto
+							urlFoto = urlFoto,
+							userId = "9d5e6132-b3b7-4bb3-9659-47a5d10e83f4"
 						)
 
 						val resposta = RetrofitClient.api.criarRegistro(novoEvento, meuTokenJwt)
