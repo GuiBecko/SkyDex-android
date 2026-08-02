@@ -2,6 +2,9 @@ package com.example.skydex
 
 import com.example.skydex.dto.EventoRequest
 import com.example.skydex.dto.EventoResponse
+import com.example.skydex.dto.LoginRequest
+import com.example.skydex.dto.LoginResponse
+import com.example.skydex.dto.RegisterRequest
 import com.example.skydex.ui.theme.pages.EventoProximoDTO
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -12,6 +15,13 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface SkyDexApi {
+
+    @POST("/auth/login")
+    suspend fun login(@Body request: LoginRequest): LoginResponse
+
+    @POST("/auth/register")
+    suspend fun register(@Body request: RegisterRequest)
+
     @GET("/api/users/{id}/eventos")
     suspend fun listarUserEvents(
         @Path("id") userId: String,

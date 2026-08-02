@@ -28,7 +28,7 @@ data class EventoProximoDTO(
 )
 
 @Composable
-fun NearEvents(modifier: Modifier = Modifier) {
+fun NearEvents(modifier: Modifier = Modifier, token: String, userId: String) {
 	// 1. Estados da tela (mesmo padrão da página Registers)
 	var eventos by remember { mutableStateOf<List<EventoProximoDTO>>(emptyList()) }
 	var isLoading by remember { mutableStateOf(true) }
@@ -38,15 +38,13 @@ fun NearEvents(modifier: Modifier = Modifier) {
 	LaunchedEffect(Unit) {
 		isLoading = true
 		try {
-			val meuTokenJwt = "Bearer <token>"
-			val myUserId = "b7ad8bb3-d1e6-4e19-964e-3cd3d60f4988"
 
 			// TODO: Substitua por coordenadas reais do GPS no futuro
 			val lat = -23.55
 			val lon = -46.63
 
 
-			val resposta = RetrofitClient.api.listarEventosProximos(myUserId, lat, lon, meuTokenJwt)
+			val resposta = RetrofitClient.api.listarEventosProximos(userId, lat, lon, token)
 			eventos = resposta
 
 		} catch (e: Exception) {
@@ -177,6 +175,6 @@ fun NearEventsPreview() {
 			)
 		}
 	) { innerPadding ->
-		NearEvents(modifier = Modifier.padding(innerPadding))
+		NearEvents(modifier = Modifier.padding(innerPadding), token = "mock", userId = "mock")
 	}
 }

@@ -106,7 +106,7 @@ fun FooterSection(
 }
 
 @Composable
-fun BuildHomeScreen(modifier: Modifier = Modifier) {
+fun BuildHomeScreen(modifier: Modifier = Modifier, token: String, userId: String) {
 	LazyColumn(
 		modifier = modifier
 			.fillMaxSize()
@@ -114,12 +114,8 @@ fun BuildHomeScreen(modifier: Modifier = Modifier) {
 			.padding(16.dp),
 		verticalArrangement = Arrangement.spacedBy(24.dp)
 	) {
-		item {
-			CabecalhoSection()
-		}
-		item {
-			CardAcaoPrincipal()
-		}
+		item { CabecalhoSection() }
+		item { CardAcaoPrincipal(token, userId) } // Passa adiante para o cartão que faz o request
 	}
 }
 
@@ -142,7 +138,7 @@ fun CabecalhoSection() {
 }
 
 @Composable
-fun CardAcaoPrincipal() {
+fun CardAcaoPrincipal(token: String, userId: String) {
 	val coroutineScope = rememberCoroutineScope()
 	var statusMensagem by remember { mutableStateOf("") }
 	var isLoading by remember { mutableStateOf(false) }
@@ -209,16 +205,15 @@ fun CardAcaoPrincipal() {
 					statusMensagem = "Enviando para a API..."
 
 					try {
-						val meuTokenJwt = "Bearer <token>"
 
 						val novoEvento = EventoRequest(
 							titulo = titulo,
 							descricao = descricao,
 							urlFoto = urlFoto,
-							userId = "9d5e6132-b3b7-4bb3-9659-47a5d10e83f4"
+							userId = userId
 						)
 
-						val resposta = RetrofitClient.api.criarRegistro(novoEvento, meuTokenJwt)
+						val resposta = RetrofitClient.api.criarRegistro(novoEvento, token)
 
 						statusMensagem = "Sucesso! Evento salvo. ID: ${resposta.id}"
 					} catch (e: Exception) {
@@ -365,6 +360,6 @@ fun BuildHomeScreenPreview() {
 			)
 		}
 	) { innerPadding ->
-		BuildHomeScreen(modifier = Modifier.padding(innerPadding))
+		BuildHomeScreen(modifier = Modifier.padding(innerPadding), token = "mock", userId = "mock")
 	}
 }

@@ -19,7 +19,7 @@ import coil.compose.AsyncImage
 import com.example.skydex.dto.EventoResponse
 
 @Composable
-fun Registers(modifier: Modifier = Modifier) {
+fun Registers(modifier: Modifier = Modifier, token: String, userId: String) {
 
 	var registros by remember { mutableStateOf<List<EventoResponse>>(emptyList()) }
 	var isLoading by remember { mutableStateOf(true) }
@@ -29,10 +29,8 @@ fun Registers(modifier: Modifier = Modifier) {
 	LaunchedEffect(Unit) {
 		isLoading = true
 		try {
-			val meuTokenJwt = "Bearer <token>"
-			val myUserId = "9d5e6132-b3b7-4bb3-9659-47a5d10e83f4"
 
-			val resposta = RetrofitClient.api.listarUserEvents(myUserId, meuTokenJwt)
+			val resposta = RetrofitClient.api.listarUserEvents(userId, token)
 			registros = resposta
 
 		} catch (e: Exception) {
@@ -139,6 +137,6 @@ fun RegistersPreview() {
 			)
 		}
 	) { innerPadding ->
-		Registers(modifier = Modifier.padding(innerPadding))
+		Registers(modifier = Modifier.padding(innerPadding),token = "mock", userId = "mock")
 	}
 }
