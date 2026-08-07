@@ -17,20 +17,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.skydex.RetrofitClient
-
-// DTO que bate com o retorno do Spring Boot
-data class EventoProximoDTO(
-	val fenomeno: String,
-	val horario: String,
-	val temperatura: Double?,
-	val nivelAlerta: String
-)
+import com.example.skydex.ServiceLocator
+import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
 
 @Composable
-fun NearEvents(modifier: Modifier = Modifier, token: String, userId: String) {
+fun NearEvents(modifier: Modifier = Modifier) {
 	// 1. Estados da tela (mesmo padrão da página Registers)
-	var eventos by remember { mutableStateOf<List<EventoProximoDTO>>(emptyList()) }
+	var eventos by remember { mutableStateOf<List<NearbyPhenomenonResponse>>(emptyList()) }
 	var isLoading by remember { mutableStateOf(true) }
 	var statusMensagem by remember { mutableStateOf("") }
 
@@ -44,7 +37,7 @@ fun NearEvents(modifier: Modifier = Modifier, token: String, userId: String) {
 			val lon = -46.63
 
 
-			val resposta = RetrofitClient.api.listarEventosProximos(userId, lat, lon, token)
+			val resposta = ServiceLocator.api.nearbyPhenomena(lat, lon)
 			eventos = resposta
 
 		} catch (e: Exception) {
@@ -105,9 +98,9 @@ fun NearEvents(modifier: Modifier = Modifier, token: String, userId: String) {
 }
 
 @Composable
-fun EventoCard(evento: EventoProximoDTO) {
+fun EventoCard(evento: NearbyPhenomenonResponse) {
 	// Define a cor da tag dependendo do nível de alerta
-	val alertaCor = when (evento.nivelAlerta) {
+	val alertaCor = when (evento.alertLevel) {
 		"Perigo Extremo!" -> Color(0xFFB91C1C)
 		"Perigo" -> Color(0xFFEF4444)
 		"Atenção" -> Color(0xFFF59E0B)
@@ -128,9 +121,9 @@ fun EventoCard(evento: EventoProximoDTO) {
 			verticalAlignment = Alignment.CenterVertically
 		) {
 			Column(modifier = Modifier.weight(1f)) {
-				Text(text = evento.fenomeno, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+				Text(text = evento.phenomenon, fontWeight = FontWeight.Bold, fontSize = 18.sp)
 
-				val tempTexto = evento.temperatura?.let { "$it °C" } ?: "Temp. Indisponível"
+				val tempTexto = evento.temperatureCelsius?.let { "$it °C" } ?: "Temp. Indisponível"
 				Text(text = tempTexto, color = Color.Gray, fontSize = 14.sp)
 
 				Spacer(modifier = Modifier.height(8.dp))
@@ -140,7 +133,7 @@ fun EventoCard(evento: EventoProximoDTO) {
 					shape = MaterialTheme.shapes.small
 				) {
 					Text(
-						text = evento.nivelAlerta.uppercase(),
+						text = evento.alertLevel.uppercase(),
 						color = alertaCor,
 						fontSize = 10.sp,
 						fontWeight = FontWeight.Bold,
@@ -151,11 +144,11 @@ fun EventoCard(evento: EventoProximoDTO) {
 
 			Column(horizontalAlignment = Alignment.End) {
 				Icon(
-					imageVector = if (evento.nivelAlerta.contains("Perigo")) Icons.Default.Warning else Icons.Default.LocationOn,
+					imageVector = if (evento.alertLevel.contains("Perigo")) Icons.Default.Warning else Icons.Default.LocationOn,
 					contentDescription = "Alerta",
 					tint = alertaCor
 				)
-				val horaFormatada = evento.horario.substringAfter("T")
+				val horaFormatada = evento.time.substringAfter("T")
 				Text(text = horaFormatada, fontSize = 14.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
 			}
 		}
@@ -175,6 +168,6 @@ fun NearEventsPreview() {
 			)
 		}
 	) { innerPadding ->
-		NearEvents(modifier = Modifier.padding(innerPadding), token = "mock", userId = "mock")
+		NearEvents(modifier = Modifier.padding(innerPadding))
 	}
 }

@@ -10,15 +10,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.skydex.RetrofitClient
-import com.example.skydex.dto.LoginRequest
+import com.example.skydex.ServiceLocator
 import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(
     modifier: Modifier = Modifier,
     onNavigateToRegister: () -> Unit,
-    onLoginSuccess: (token: String, userId: String) -> Unit
+    onLoginSuccess: () -> Unit
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -63,17 +62,11 @@ fun LoginScreen(
                     isLoading = true
                     mensagemErro = ""
                     coroutineScope.launch {
-                        try {
-                            val request = LoginRequest(email.trim(), password.trim())
-                            val resposta = RetrofitClient.api.login(request)
-                            // Retorna o token com "Bearer " já embutido e o ID salvo do banco
-                            val formatoToken = seTokenJaTemBearer(resposta.tokenGerado)
-                            onLoginSuccess(formatoToken, resposta.userId)
-                        } catch (e: Exception) {
-                            mensagemErro = "Credenciais inválidas ou erro no servidor."
-                        } finally {
-                            isLoading = false
-                        }
+                        // A sessão é persistida pelo repositório; a tela só reage ao resultado.
+                        ServiceLocator.authRepository.login(email, password)
+                            .onSuccess { onLoginSuccess() }
+                            .onFailure { mensagemErro = "Credenciais inválidas ou erro no servidor." }
+                        isLoading = false
                     }
                 }
             },
@@ -89,9 +82,4 @@ fun LoginScreen(
             Text("Não tem uma conta? Registre-se")
         }
     }
-}
-
-// Garante que o Bearer está no token
-fun seTokenJaTemBearer(token: String): String {
-    return if (token.startsWith("Bearer ")) token else "Bearer $token"
 }

@@ -10,8 +10,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.skydex.RetrofitClient
-import com.example.skydex.dto.RegisterRequest
+import com.example.skydex.ServiceLocator
 import kotlinx.coroutines.launch
 
 @Composable
@@ -73,15 +72,10 @@ fun RegisterScreen(
                     isLoading = true
                     mensagemErro = ""
                     coroutineScope.launch {
-                        try {
-                            val request = RegisterRequest(nome, email, password)
-                            RetrofitClient.api.register(request)
-                            onRegisterSuccess() // Se der certo, volta para o login
-                        } catch (e: Exception) {
-                            mensagemErro = "Erro ao registrar. Email já existe?"
-                        } finally {
-                            isLoading = false
-                        }
+                        ServiceLocator.authRepository.register(nome, email, password)
+                            .onSuccess { onRegisterSuccess() } // Se der certo, volta para o login
+                            .onFailure { mensagemErro = "Erro ao registrar. Email já existe?" }
+                        isLoading = false
                     }
                 }
             },

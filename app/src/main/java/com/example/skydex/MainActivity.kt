@@ -19,10 +19,8 @@ class MainActivity : ComponentActivity() {
 		enableEdgeToEdge()
 		setContent {
 			SkyDexTheme {
-				// Variáveis globais da sessão do usuário
+				// A sessão vive no SessionStore; a tela só guarda a aba atual.
 				var telaAtual by remember { mutableStateOf("login") }
-				var tokenJwtGlobal by remember { mutableStateOf("") }
-				var userIdGlobal by remember { mutableStateOf("") }
 
 				// Se não estiver logado, mostra o fluxo de autenticação sem a barra inferior
 				if (telaAtual == "login" || telaAtual == "register") {
@@ -31,11 +29,7 @@ class MainActivity : ComponentActivity() {
 							"login" -> LoginScreen(
 								modifier = Modifier.padding(innerPadding),
 								onNavigateToRegister = { telaAtual = "register" },
-								onLoginSuccess = { token, userId ->
-									tokenJwtGlobal = token
-									userIdGlobal = userId
-									telaAtual = "home" // A chave vira aqui e abre o app!
-								}
+								onLoginSuccess = { telaAtual = "home" } // A chave vira aqui e abre o app!
 							)
 							"register" -> RegisterScreen(
 								modifier = Modifier.padding(innerPadding),
@@ -57,23 +51,11 @@ class MainActivity : ComponentActivity() {
 							)
 						}
 					) { innerPadding ->
-						// Injeta os dados da sessão nas telas que precisam fazer chamadas à API
+						// O token é anexado automaticamente pelo AuthInterceptor.
 						when (telaAtual) {
-							"home" -> BuildHomeScreen(
-								modifier = Modifier.padding(innerPadding),
-								token = tokenJwtGlobal,
-								userId = userIdGlobal
-							)
-							"eventos" -> NearEvents(
-								modifier = Modifier.padding(innerPadding),
-								token = tokenJwtGlobal,
-								userId = userIdGlobal
-							)
-							"meus registros" -> Registers(
-								modifier = Modifier.padding(innerPadding),
-								token = tokenJwtGlobal,
-								userId = userIdGlobal
-							)
+							"home" -> BuildHomeScreen(modifier = Modifier.padding(innerPadding))
+							"eventos" -> NearEvents(modifier = Modifier.padding(innerPadding))
+							"meus registros" -> Registers(modifier = Modifier.padding(innerPadding))
 						}
 					}
 				}
@@ -100,9 +82,9 @@ fun AppCompletoPreview() {
 	) { innerPadding ->
 
 		when (telaAtual) {
-			"home" -> BuildHomeScreen(modifier = Modifier.padding(innerPadding), token = "xyz", userId = "123")
-			"eventos" -> NearEvents(modifier = Modifier.padding(innerPadding), token = "xyz", userId = "123")
-			"meus registros" -> Registers(modifier = Modifier.padding(innerPadding), token = "xyz", userId = "123")
+			"home" -> BuildHomeScreen(modifier = Modifier.padding(innerPadding))
+			"eventos" -> NearEvents(modifier = Modifier.padding(innerPadding))
+			"meus registros" -> Registers(modifier = Modifier.padding(innerPadding))
 		}
 	}
 }

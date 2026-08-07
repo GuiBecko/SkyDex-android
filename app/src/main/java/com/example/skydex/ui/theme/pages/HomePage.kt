@@ -23,8 +23,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.skydex.RetrofitClient
-import com.example.skydex.dto.EventoRequest
+import com.example.skydex.ServiceLocator
+import com.example.skydex.data.remote.dto.CreateWeatherEventRequest
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
@@ -106,7 +106,7 @@ fun FooterSection(
 }
 
 @Composable
-fun BuildHomeScreen(modifier: Modifier = Modifier, token: String, userId: String) {
+fun BuildHomeScreen(modifier: Modifier = Modifier) {
 	LazyColumn(
 		modifier = modifier
 			.fillMaxSize()
@@ -115,7 +115,7 @@ fun BuildHomeScreen(modifier: Modifier = Modifier, token: String, userId: String
 		verticalArrangement = Arrangement.spacedBy(24.dp)
 	) {
 		item { CabecalhoSection() }
-		item { CardAcaoPrincipal(token, userId) } // Passa adiante para o cartão que faz o request
+		item { CardAcaoPrincipal() }
 	}
 }
 
@@ -138,7 +138,7 @@ fun CabecalhoSection() {
 }
 
 @Composable
-fun CardAcaoPrincipal(token: String, userId: String) {
+fun CardAcaoPrincipal() {
 	val coroutineScope = rememberCoroutineScope()
 	var statusMensagem by remember { mutableStateOf("") }
 	var isLoading by remember { mutableStateOf(false) }
@@ -206,14 +206,13 @@ fun CardAcaoPrincipal(token: String, userId: String) {
 
 					try {
 
-						val novoEvento = EventoRequest(
-							titulo = titulo,
-							descricao = descricao,
-							urlFoto = urlFoto,
-							userId = userId
+						val novoEvento = CreateWeatherEventRequest(
+							title = titulo,
+							description = descricao,
+							photoUrl = urlFoto
 						)
 
-						val resposta = RetrofitClient.api.criarRegistro(novoEvento, token)
+						val resposta = ServiceLocator.api.createCapture(novoEvento)
 
 						statusMensagem = "Sucesso! Evento salvo. ID: ${resposta.id}"
 					} catch (e: Exception) {
@@ -360,6 +359,6 @@ fun BuildHomeScreenPreview() {
 			)
 		}
 	) { innerPadding ->
-		BuildHomeScreen(modifier = Modifier.padding(innerPadding), token = "mock", userId = "mock")
+		BuildHomeScreen(modifier = Modifier.padding(innerPadding))
 	}
 }

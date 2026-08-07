@@ -14,14 +14,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.skydex.RetrofitClient
+import com.example.skydex.ServiceLocator
 import coil.compose.AsyncImage
-import com.example.skydex.dto.EventoResponse
+import com.example.skydex.data.remote.dto.WeatherEventResponse
 
 @Composable
-fun Registers(modifier: Modifier = Modifier, token: String, userId: String) {
+fun Registers(modifier: Modifier = Modifier) {
 
-	var registros by remember { mutableStateOf<List<EventoResponse>>(emptyList()) }
+	var registros by remember { mutableStateOf<List<WeatherEventResponse>>(emptyList()) }
 	var isLoading by remember { mutableStateOf(true) }
 	var statusMensagem by remember { mutableStateOf("") }
 
@@ -30,7 +30,7 @@ fun Registers(modifier: Modifier = Modifier, token: String, userId: String) {
 		isLoading = true
 		try {
 
-			val resposta = RetrofitClient.api.listarUserEvents(userId, token)
+			val resposta = ServiceLocator.api.myCaptures()
 			registros = resposta
 
 		} catch (e: Exception) {
@@ -91,7 +91,7 @@ fun Registers(modifier: Modifier = Modifier, token: String, userId: String) {
 }
 
 @Composable
-fun RegistroCard(registro: EventoResponse) {
+fun RegistroCard(registro: WeatherEventResponse) {
 	Card(
 		colors = CardDefaults.cardColors(containerColor = Color.White),
 		elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
@@ -102,8 +102,8 @@ fun RegistroCard(registro: EventoResponse) {
 		) {
 			// Usando AsyncImage do Coil para puxar a foto da web (URL)
 			AsyncImage(
-				model = registro.urlFoto,
-				contentDescription = registro.titulo,
+				model = registro.photoUrl,
+				contentDescription = registro.title,
 				modifier = Modifier
 					.fillMaxWidth()
 					.height(150.dp)
@@ -112,11 +112,11 @@ fun RegistroCard(registro: EventoResponse) {
 
 			Spacer(modifier = Modifier.height(12.dp))
 
-			Text(text = registro.titulo, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+			Text(text = registro.title, fontWeight = FontWeight.Bold, fontSize = 18.sp)
 			Spacer(modifier = Modifier.height(4.dp))
-			Text(text = registro.descricao, color = Color.Gray, fontSize = 14.sp)
+			Text(text = registro.description, color = Color.Gray, fontSize = 14.sp)
 			Spacer(modifier = Modifier.height(8.dp))
-			Text(text = "Data: ${registro.dataHoraRegistro}", color = Color(0xFF0284C7), fontSize = 12.sp)
+			Text(text = "Data: ${registro.capturedAt}", color = Color(0xFF0284C7), fontSize = 12.sp)
 		}
 	}
 }
@@ -137,6 +137,6 @@ fun RegistersPreview() {
 			)
 		}
 	) { innerPadding ->
-		Registers(modifier = Modifier.padding(innerPadding),token = "mock", userId = "mock")
+		Registers(modifier = Modifier.padding(innerPadding))
 	}
 }
