@@ -1,0 +1,186 @@
+package com.example.skydex.ui.home
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
+import com.example.skydex.ui.common.UiState
+
+@Composable
+fun HomeScreen(viewModel: HomeViewModel, modifier: Modifier = Modifier) {
+    val state by viewModel.state.collectAsState()
+    HomeContent(state = state, modifier = modifier)
+}
+
+/** The screen without its ViewModel, so the `@Preview`s below can render it. */
+@Composable
+private fun HomeContent(
+    state: UiState<List<NearbyPhenomenonResponse>>,
+    modifier: Modifier = Modifier
+) {
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color(0xFFF3F4F6))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp)
+    ) {
+        item {
+            Text(
+                text = "Eventos Próximos",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.Black
+            )
+        }
+
+        when (state) {
+            is UiState.Loading -> item {
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Color(0xFF0284C7))
+                }
+            }
+
+            is UiState.Error -> item {
+                Text(
+                    text = state.message,
+                    color = Color.Red,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            is UiState.Success -> if (state.data.isEmpty()) {
+                item {
+                    Text(
+                        text = "Nenhum evento severo detectado na sua região.",
+                        color = Color.Gray,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            } else {
+                items(state.data) { phenomenon -> PhenomenonCard(phenomenon) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhenomenonCard(phenomenon: NearbyPhenomenonResponse) {
+    val alertColor = when (phenomenon.alertLevel) {
+        "Perigo Extremo!" -> Color(0xFFB91C1C)
+        "Perigo" -> Color(0xFFEF4444)
+        "Atenção" -> Color(0xFFF59E0B)
+        "Interessante" -> Color(0xFF3B82F6)
+        else -> Color(0xFF10B981)
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = phenomenon.phenomenon, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+
+                val temperature = phenomenon.temperatureCelsius?.let { "$it °C" } ?: "Temp. Indisponível"
+                Text(text = temperature, color = Color.Gray, fontSize = 14.sp)
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Surface(
+                    color = alertColor.copy(alpha = 0.1f),
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        text = phenomenon.alertLevel.uppercase(),
+                        color = alertColor,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Column(horizontalAlignment = Alignment.End) {
+                Icon(
+                    imageVector = if (phenomenon.alertLevel.contains("Perigo")) {
+                        Icons.Default.Warning
+                    } else {
+                        Icons.Default.LocationOn
+                    },
+                    contentDescription = "Alerta",
+                    tint = alertColor
+                )
+                Text(
+                    text = phenomenon.time.substringAfter("T"),
+                    fontSize = 14.sp,
+                    color = Color.Gray,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+private val previewPhenomena = listOf(
+    NearbyPhenomenonResponse("Tempestade elétrica", "2026-08-07T14:30", 21.5, "Perigo"),
+    NearbyPhenomenonResponse("Halo solar", "2026-08-07T09:15", 27.0, "Interessante"),
+    NearbyPhenomenonResponse("Névoa", "2026-08-07T06:00", null, "Tranquilo")
+)
+
+@Preview(showBackground = true)
+@Composable
+private fun HomeContentPreview() {
+    HomeContent(state = UiState.Success(previewPhenomena))
+}
+
+@Preview(showBackground = true, name = "Eventos próximos - carregando")
+@Composable
+private fun HomeContentLoadingPreview() {
+    HomeContent(state = UiState.Loading)
+}
+
+@Preview(showBackground = true, name = "Eventos próximos - erro")
+@Composable
+private fun HomeContentErrorPreview() {
+    HomeContent(state = UiState.Error("Não foi possível carregar os eventos próximos."))
+}
