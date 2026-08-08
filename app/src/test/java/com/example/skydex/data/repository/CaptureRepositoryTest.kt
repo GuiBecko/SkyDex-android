@@ -60,8 +60,15 @@ class CaptureRepositoryTest {
 
     @Test
     fun `create forwards the request body`() = runBlocking {
-        // TODO(task-10): replace with the device's real position
-        val request = CreateWeatherEventRequest("Cumulonimbus", "Uma torre de nuvens", "https://example.test/cb.jpg", 0.0, 0.0)
+        // 0.0, 0.0 is a perfectly valid opaque fixture here: this unit test has no device to
+        // supply a real position, it only checks that the repository forwards whatever it is given.
+        val request = CreateWeatherEventRequest(
+            title = "Cumulonimbus",
+            description = "Uma torre de nuvens",
+            photoUrl = "https://example.test/cb.jpg",
+            latitude = 0.0,
+            longitude = 0.0
+        )
         api.createResponse = { capture }
 
         assertEquals(capture, repository.create(request).getOrNull())
