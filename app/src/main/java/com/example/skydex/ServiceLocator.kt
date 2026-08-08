@@ -7,6 +7,7 @@ import com.example.skydex.data.remote.SkyDexApi
 import com.example.skydex.data.repository.AuthRepository
 import com.example.skydex.data.repository.CaptureRepository
 import com.example.skydex.data.session.SessionStore
+import com.example.skydex.util.DeviceLocation
 
 /**
  * Hand-rolled dependency graph. The app is small enough that a DI framework would cost more
@@ -42,4 +43,6 @@ object ServiceLocator {
     val authRepository: AuthRepository by lazy { AuthRepository(api, sessionStore) }
 
     val captureRepository: CaptureRepository by lazy { CaptureRepository(api) }
+
+    val deviceLocation: DeviceLocation by lazy { DeviceLocation(requireContext()) }
 }

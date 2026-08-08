@@ -59,6 +59,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.play.services.location)
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
 	implementation("androidx.compose.material:material-icons-extended")
     // Interceptor para ver os logs das requisições
