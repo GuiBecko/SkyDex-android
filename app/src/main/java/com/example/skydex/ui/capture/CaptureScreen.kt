@@ -29,7 +29,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -69,6 +68,12 @@ fun CaptureScreen(
     // background, where there is no pending path to restore from. Both are visible losses — empty
     // fields, an empty preview — not the silent one this fixes, so full restoration through
     // `createSavedStateHandle()` is left to a later round rather than bolted on here.
+    //
+    // One loss in that set *is* invisible: `uploadedPhotoUrl` dies with the process too, so the
+    // orphan-compounding that cache prevents is not durable across a kill. A photo uploaded before
+    // the kill is already on the server, referenced by nothing, and the retry after restart cannot
+    // know that — it uploads again. Nothing on screen shows it, because the waste is server-side;
+    // it is bounded by backlog item #13 (the server-side sweep), not by anything the client does.
     var pendingPath by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Tracks whether the user has actively denied the permission (as opposed to simply never
@@ -76,7 +81,12 @@ fun CaptureScreen(
     // e.g. GPS switched off). Android will not show the system permission dialog again after a
     // denial, so once this flips true, "ask again" is not a real option: the only way out is
     // Settings, and the copy below has to say so.
-    var permissionDenied by remember { mutableStateOf(false) }
+    //
+    // `rememberSaveable` for the same reason as `pendingPath`: a process kill behind the camera
+    // would otherwise bring this back false and briefly offer "ative o GPS" to a user whose real
+    // problem is a denial. It self-heals as soon as the re-launched permission request answers, so
+    // this is a flicker rather than the dead end above — but a Boolean costs nothing to carry.
+    var permissionDenied by rememberSaveable { mutableStateOf(false) }
 
     val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         val file = pendingPath?.let(::File)
@@ -124,12 +134,19 @@ fun CaptureScreen(
             )
         }
 
+        // Disabled while a save is in flight, for the same reason "Salvar Registro" is: a retake
+        // that lands mid-upload replaces the photo under a coroutine that is already carrying the
+        // old one, and the user's only clue would be a preview that no longer matches what gets
+        // saved. The ViewModel guards that window too — this is a hint, not the guard, since it
+        // only takes effect at the next recomposition — but the hint is worth having: it says
+        // "wait" instead of letting the tap open the camera and then discarding the result.
         OutlinedButton(
             onClick = {
                 val file = PhotoCaptureFiles.newCaptureFile(context)
                 pendingPath = file.absolutePath
                 takePicture.launch(PhotoCaptureFiles.uriFor(context, file))
             },
+            enabled = !state.submitting,
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(Icons.Default.PhotoCamera, contentDescription = null)

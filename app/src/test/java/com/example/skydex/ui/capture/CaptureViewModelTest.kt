@@ -3,6 +3,7 @@ package com.example.skydex.ui.capture
 import com.example.skydex.data.remote.dto.CreateWeatherEventRequest
 import com.example.skydex.data.remote.dto.WeatherEventResponse
 import com.example.skydex.util.Coordinates
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -301,6 +302,79 @@ class CaptureViewModelTest {
     }
 
     /**
+     * The retake that interleaves with the upload rather than following it. `FakeCaptureGateway`
+     * structurally cannot express this — its `uploadPhoto` returns without ever suspending, so
+     * nothing can happen "during" it — hence [SuspendingUploadGateway].
+     *
+     * The upload was started for `first.jpg`. By the time it answers, the user has taken
+     * `second.jpg`, and the state that `onPhotoTaken` cleared is about to be written back by a
+     * coroutine that only knows about the old file. Caching that path would file the next attempt
+     * under the picture the user just discarded — silently, because the preview shows the new one.
+     */
+    @Test
+    fun `a retake while the upload is in flight does not cache the discarded photo`() = runTest(dispatcher) {
+        val gateway = SuspendingUploadGateway(FakeCaptureGateway(createFailure = IOException("create rejected")))
+        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0346, -51.2177) }
+        val first = jpeg("first.jpg")
+        val second = jpeg("second.jpg")
+
+        viewModel.refreshLocation()
+        advanceUntilIdle()
+        viewModel.onTitleChanged("Tempestade")
+        viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhotoTaken(first)
+        viewModel.submit()
+        advanceUntilIdle() // the upload is now parked inside the gateway
+
+        viewModel.onPhotoTaken(second)
+        gateway.firstUpload.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(second, viewModel.state.value.photoFile)
+        assertNull(viewModel.state.value.uploadedPhotoUrl)
+    }
+
+    /**
+     * The same interleaving with the `create` succeeding, which is the worse outcome: nothing fails,
+     * the screen navigates away, and the capture is filed under a photo the user replaced and can
+     * no longer see. The submit that was already in flight must not save at all — its snapshot is
+     * stale — and the next tap must save the photo actually on screen.
+     */
+    @Test
+    fun `a capture is never saved with a photo the user replaced mid-upload`() = runTest(dispatcher) {
+        val gateway = SuspendingUploadGateway()
+        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0346, -51.2177) }
+        val first = jpeg("first.jpg")
+        val second = jpeg("second.jpg")
+
+        viewModel.refreshLocation()
+        advanceUntilIdle()
+        viewModel.onTitleChanged("Tempestade")
+        viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhotoTaken(first)
+        viewModel.submit()
+        advanceUntilIdle()
+
+        viewModel.onPhotoTaken(second)
+        gateway.firstUpload.complete(Unit)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.state.value.saved)
+        assertEquals(0, gateway.createdRequests.size)
+        assertEquals(
+            "A foto foi trocada durante o envio. Toque em Salvar de novo.",
+            viewModel.state.value.errorMessage
+        )
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.state.value.saved)
+        assertEquals(listOf(first, second), gateway.uploadedFiles)
+        assertEquals("/api/photos/second.jpg", gateway.createdRequests.single().photoUrl)
+    }
+
+    /**
      * Same shape as HomeScreen's: `CaptureScreen`'s `LaunchedEffect(Unit)` re-runs on every Activity
      * recreation, so without this latch a rotation re-launches the permission request and re-runs a
      * GPS fix on a ViewModel that already has a position.
@@ -368,4 +442,35 @@ class FakeCaptureGateway(
             )
         )
     }
+}
+
+/**
+ * A gateway whose upload really suspends, so a test can act *while* it is in flight.
+ *
+ * [FakeCaptureGateway] cannot: its `uploadPhoto` returns without ever hitting a suspension point,
+ * so from the ViewModel's side the upload is instantaneous and no retake can interleave with it —
+ * an entire class of races is invisible to a suite built only on it. Here the first upload parks on
+ * [firstUpload] until the test releases it; later uploads (the retry path) return immediately, so a
+ * test can drive the whole sequence with a single gate.
+ *
+ * The returned path names the file (`/api/photos/second.jpg`) rather than being a constant, because
+ * these tests are about *which* photo a capture was filed under — a fixed URL would make the wrong
+ * photo and the right one indistinguishable in the assertion.
+ */
+private class SuspendingUploadGateway(
+    private val creates: FakeCaptureGateway = FakeCaptureGateway()
+) : CaptureGateway {
+
+    val firstUpload = CompletableDeferred<Unit>()
+    val uploadedFiles = mutableListOf<File>()
+    val createdRequests: List<CreateWeatherEventRequest> get() = creates.createdRequests
+
+    override suspend fun uploadPhoto(file: File): Result<String> {
+        uploadedFiles += file
+        if (uploadedFiles.size == 1) firstUpload.await()
+        return Result.success("/api/photos/${file.name}")
+    }
+
+    override suspend fun create(request: CreateWeatherEventRequest): Result<WeatherEventResponse> =
+        creates.create(request)
 }

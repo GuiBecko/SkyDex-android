@@ -30,21 +30,34 @@ class HomeViewModel(
     private var initialLoadClaimed = false
 
     /**
-     * Claims the one screen-driven initial load, returning `true` exactly once per ViewModel.
+     * Answers whether the screen entering composition should start a load.
      *
-     * `HomeScreen`'s `LaunchedEffect(Unit)` re-runs on every Activity recreation — the manifest
-     * declares no `configChanges`, so a rotation is a recreation — while this ViewModel survives it.
-     * Without the latch the screen would re-launch the permission request, take a fresh GPS fix and
-     * re-hit the network on every rotation, discarding a list it already has.
+     * `true` on the first entry, and afterwards only when the last attempt left the screen in
+     * [UiState.Error]. Two things are being balanced here:
      *
-     * The latch lives here rather than inside [loadForCurrentPosition] deliberately: making the load
-     * a no-op whenever the state is already `Success` would look equivalent and would silently break
-     * the retry path, which has to force a real reload.
+     * - `HomeScreen`'s `LaunchedEffect(Unit)` re-runs on every Activity recreation — the manifest
+     *   declares no `configChanges`, so a rotation is a recreation — while this ViewModel survives
+     *   it. Reloading unconditionally would re-launch the permission request, take a fresh GPS fix
+     *   and re-hit the network on every rotation, throwing away a list already on screen.
+     * - An error is not a result worth protecting. This ViewModel also outlives navigation: the
+     *   bottom bar uses `popUpTo(HOME) { saveState = true }` + `restoreState`, so the `HOME` entry
+     *   and everything in it come back exactly as they were. A latch that never re-armed would pin
+     *   one second of being offline to the whole process lifetime — leaving the tab and returning
+     *   would change nothing, and only killing the app would clear it.
+     *
+     * `Loading` deliberately answers `false`: a load already in flight must not be doubled by a
+     * re-entry that happens while the fix is still being taken.
+     *
+     * This gate stays out of [loadForCurrentPosition] on purpose. Short-circuiting the load itself
+     * whenever the state is already `Success` would look equivalent and would silently disable the
+     * retry control on the error screen, which has to force a real reload.
      */
-    fun shouldStartInitialLoad(): Boolean {
-        if (initialLoadClaimed) return false
-        initialLoadClaimed = true
-        return true
+    fun shouldLoadOnEntry(): Boolean {
+        if (!initialLoadClaimed) {
+            initialLoadClaimed = true
+            return true
+        }
+        return _state.value is UiState.Error
     }
 
     fun loadForCurrentPosition() {

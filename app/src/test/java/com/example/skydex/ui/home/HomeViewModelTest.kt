@@ -139,8 +139,73 @@ class HomeViewModelTest {
         val viewModel =
             HomeViewModel(repository, locationProvider = { coordinates }, logWarning = noLogging)
 
-        assertTrue(viewModel.shouldStartInitialLoad())
-        assertFalse(viewModel.shouldStartInitialLoad())
+        assertTrue(viewModel.shouldLoadOnEntry())
+        assertFalse(viewModel.shouldLoadOnEntry())
+    }
+
+    /** The list the latch protects: a successful load must survive re-entry untouched. */
+    @Test
+    fun `re-entering the screen after a successful load does not reload`() = runTest(dispatcher) {
+        api.nearbyResponse = { listOf(storm) }
+        val viewModel =
+            HomeViewModel(repository, locationProvider = { coordinates }, logWarning = noLogging)
+
+        assertTrue(viewModel.shouldLoadOnEntry())
+        viewModel.loadForCurrentPosition()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.shouldLoadOnEntry())
+        assertEquals(1, api.nearbyCalls.size)
+    }
+
+    /**
+     * The other half, and the one that makes the latch safe: an `Error` is a dead end, not a result
+     * worth protecting. This ViewModel outlives the composable *and* the bottom bar's
+     * `popUpTo(HOME) { saveState = true }` + `restoreState`, so a one-shot latch would keep a
+     * failed load — a phone that was offline for one second — on screen for the whole process
+     * lifetime, with leaving the tab and coming back changing nothing.
+     */
+    @Test
+    fun `re-entering the screen after a failed load starts a new one`() = runTest(dispatcher) {
+        api.nearbyResponse = { throw IOException("offline") }
+        val viewModel =
+            HomeViewModel(repository, locationProvider = { coordinates }, logWarning = noLogging)
+
+        assertTrue(viewModel.shouldLoadOnEntry())
+        viewModel.loadForCurrentPosition()
+        advanceUntilIdle()
+        assertEquals(UiState.Error("Não foi possível carregar os eventos próximos."), viewModel.state.value)
+
+        assertTrue(viewModel.shouldLoadOnEntry())
+    }
+
+    /** A missing fix is the same dead end, reached through the other branch of the load. */
+    @Test
+    fun `re-entering the screen after a missing fix starts a new load`() = runTest(dispatcher) {
+        val viewModel =
+            HomeViewModel(repository, locationProvider = { null }, logWarning = noLogging)
+
+        assertTrue(viewModel.shouldLoadOnEntry())
+        viewModel.loadForCurrentPosition()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.shouldLoadOnEntry())
+    }
+
+    /**
+     * And re-entry must not restart a load that is still running: `Loading` is not a failure, and
+     * re-entering while the first fix is still being taken would queue a second one behind it.
+     */
+    @Test
+    fun `re-entering while a load is still in flight does not start another`() = runTest(dispatcher) {
+        api.nearbyResponse = { listOf(storm) }
+        val viewModel =
+            HomeViewModel(repository, locationProvider = { coordinates }, logWarning = noLogging)
+
+        assertTrue(viewModel.shouldLoadOnEntry())
+        viewModel.loadForCurrentPosition()
+
+        assertFalse(viewModel.shouldLoadOnEntry())
     }
 
     /**
@@ -154,7 +219,7 @@ class HomeViewModelTest {
         val viewModel =
             HomeViewModel(repository, locationProvider = { coordinates }, logWarning = noLogging)
 
-        viewModel.shouldStartInitialLoad()
+        viewModel.shouldLoadOnEntry()
         viewModel.loadForCurrentPosition()
         advanceUntilIdle()
         assertEquals(UiState.Success(HomeData(coordinates, listOf(storm))), viewModel.state.value)

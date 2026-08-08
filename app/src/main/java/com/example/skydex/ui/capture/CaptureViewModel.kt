@@ -20,7 +20,9 @@ data class CaptureUiState(
      *
      * Kept so a retry after a failed `create` reuses the JPEG already on the server instead of
      * uploading a second copy. Cleared by [CaptureViewModel.onPhotoTaken], because the moment the
-     * user retakes the shot this path points at the picture they just replaced.
+     * user retakes the shot this path points at the picture they just replaced — and written back
+     * only while [photoFile] is still the file that was uploaded, since the write happens after a
+     * suspension the user can retake during.
      */
     val uploadedPhotoUrl: String? = null,
     val coordinates: Coordinates? = null,
@@ -50,7 +52,7 @@ class CaptureViewModel(
 
     /**
      * Claims the one screen-driven initial location request, returning `true` exactly once per
-     * ViewModel — same reasoning as `HomeViewModel.shouldStartInitialLoad`: `CaptureScreen`'s
+     * ViewModel — same reasoning as `HomeViewModel.shouldLoadOnEntry`: `CaptureScreen`'s
      * `LaunchedEffect(Unit)` re-runs on every Activity recreation, so without the latch a rotation
      * re-launches the permission request and takes another GPS fix for a position already held.
      * [refreshLocation] itself stays unconditional, because "Tentar novamente" has to work.
@@ -113,7 +115,28 @@ class CaptureViewModel(
                     }
                     return@launch
                 }
-                uploaded.getOrThrow().also { url -> _state.update { it.copy(uploadedPhotoUrl = url) } }
+                // Conditional, because this write lands *after* a suspension the user can act
+                // during: "Tirar Outra Foto" stays tappable for the frame in which the submit
+                // starts, and `onPhotoTaken` clearing the cache is worthless if the coroutine that
+                // was already in flight resurrects it. Caching a path that belongs to a replaced
+                // file would file the *next* attempt under a picture the user cannot see any more.
+                uploaded.getOrThrow().also { url ->
+                    _state.update { if (it.photoFile == photoFile) it.copy(uploadedPhotoUrl = url) else it }
+                }
+            }
+
+            // Same window, one step further along: this attempt uploaded (or reused) a photo the
+            // user has since replaced, so saving it would file the capture under an image the
+            // preview no longer shows — and then navigate away, leaving nothing to notice. There
+            // is no un-sending a `create`, so the check has to happen before it, not after.
+            if (_state.value.photoFile != photoFile) {
+                _state.update {
+                    it.copy(
+                        submitting = false,
+                        errorMessage = "A foto foi trocada durante o envio. Toque em Salvar de novo."
+                    )
+                }
+                return@launch
             }
 
             val request = CreateWeatherEventRequest(

@@ -26,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -55,13 +56,24 @@ fun HomeScreen(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { viewModel.loadForCurrentPosition() }
 
-    // Guarded by the ViewModel's latch, not by `LaunchedEffect(Unit)` alone: this effect re-runs on
-    // every Activity recreation, and the ViewModel outlives them. See HomeViewModel.
+    // Gated by the ViewModel, not by `LaunchedEffect(Unit)` alone: this effect re-runs on every
+    // Activity recreation, and the ViewModel outlives them. See HomeViewModel.shouldLoadOnEntry.
     LaunchedEffect(Unit) {
-        if (viewModel.shouldStartInitialLoad()) requestLocation.launch(LOCATION_PERMISSIONS)
+        if (viewModel.shouldLoadOnEntry()) requestLocation.launch(LOCATION_PERMISSIONS)
     }
 
-    HomeContent(state = state, onStartCapture = onStartCapture, modifier = modifier)
+    HomeContent(
+        state = state,
+        onStartCapture = onStartCapture,
+        // Retry goes through the permission launcher rather than calling the ViewModel straight,
+        // which is what the initial load does too. An already-granted permission makes `launch`
+        // return immediately with no dialog, so the granted case costs nothing; the case it buys is
+        // the user who denied the permission, fixed it, and is now looking at the error — a bare
+        // `loadForCurrentPosition()` would take a fix the app is still not allowed to take and put
+        // the same message back on screen. The callback calls the ViewModel either way.
+        onRetry = { requestLocation.launch(LOCATION_PERMISSIONS) },
+        modifier = modifier
+    )
 }
 
 /** The screen without its ViewModel, so the `@Preview`s below can render it. */
@@ -69,6 +81,7 @@ fun HomeScreen(
 private fun HomeContent(
     state: UiState<HomeData>,
     onStartCapture: () -> Unit,
+    onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -96,13 +109,23 @@ private fun HomeContent(
                 }
             }
 
+            // The message alone would be a dead end. Nothing else on this screen triggers a load —
+            // `loadForCurrentPosition` has exactly one caller, the permission-launcher callback —
+            // so without this button a user who opened the app offline would have no way back once
+            // connectivity returned, short of killing the process. Matches CaptureScreen's copy.
             is UiState.Error -> item {
-                Text(
-                    text = state.message,
-                    color = Color.Red,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = state.message,
+                        color = Color.Red,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    TextButton(onClick = onRetry) { Text("Tentar novamente") }
+                }
             }
 
             is UiState.Success -> if (state.data.phenomena.isEmpty()) {
@@ -235,14 +258,15 @@ private val previewCoordinates = Coordinates(-23.55, -46.63)
 private fun HomeContentPreview() {
     HomeContent(
         state = UiState.Success(HomeData(previewCoordinates, previewPhenomena)),
-        onStartCapture = {}
+        onStartCapture = {},
+        onRetry = {}
     )
 }
 
 @Preview(showBackground = true, name = "Eventos próximos - carregando")
 @Composable
 private fun HomeContentLoadingPreview() {
-    HomeContent(state = UiState.Loading, onStartCapture = {})
+    HomeContent(state = UiState.Loading, onStartCapture = {}, onRetry = {})
 }
 
 @Preview(showBackground = true, name = "Eventos próximos - erro")
@@ -250,6 +274,7 @@ private fun HomeContentLoadingPreview() {
 private fun HomeContentErrorPreview() {
     HomeContent(
         state = UiState.Error("Não foi possível carregar os eventos próximos."),
-        onStartCapture = {}
+        onStartCapture = {},
+        onRetry = {}
     )
 }
