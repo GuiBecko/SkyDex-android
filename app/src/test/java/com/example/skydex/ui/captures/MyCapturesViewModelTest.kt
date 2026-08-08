@@ -3,7 +3,9 @@ package com.example.skydex.ui.captures
 import com.example.skydex.data.remote.FakeSkyDexApi
 import com.example.skydex.data.remote.dto.WeatherEventResponse
 import com.example.skydex.data.repository.CaptureRepository
+import com.example.skydex.ui.common.RecordingLogWarning
 import com.example.skydex.ui.common.UiState
+import com.example.skydex.ui.common.noLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -41,7 +43,7 @@ class MyCapturesViewModelTest {
     fun `the captures are loaded as soon as the view model exists`() = runTest(dispatcher) {
         api.myCapturesResponse = { listOf(capture) }
 
-        val viewModel = MyCapturesViewModel(repository)
+        val viewModel = MyCapturesViewModel(repository, noLogging)
         assertEquals(UiState.Loading, viewModel.state.value)
 
         advanceUntilIdle()
@@ -49,22 +51,25 @@ class MyCapturesViewModelTest {
     }
 
     @Test
-    fun `a failure becomes an error message`() = runTest(dispatcher) {
-        api.myCapturesResponse = { throw IOException("offline") }
+    fun `a failure becomes an error message and logs the cause`() = runTest(dispatcher) {
+        val cause = IOException("offline")
+        api.myCapturesResponse = { throw cause }
+        val logWarning = RecordingLogWarning()
 
-        val viewModel = MyCapturesViewModel(repository)
+        val viewModel = MyCapturesViewModel(repository, logWarning)
         advanceUntilIdle()
 
         assertEquals(
             UiState.Error("Não foi possível carregar seus registros."),
             viewModel.state.value
         )
+        assertEquals(cause, logWarning.warnings.single().cause)
     }
 
     @Test
     fun `refresh asks the api again`() = runTest(dispatcher) {
         api.myCapturesResponse = { throw IOException("offline") }
-        val viewModel = MyCapturesViewModel(repository)
+        val viewModel = MyCapturesViewModel(repository, noLogging)
         advanceUntilIdle()
 
         api.myCapturesResponse = { listOf(capture) }

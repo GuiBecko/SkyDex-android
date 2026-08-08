@@ -1,9 +1,10 @@
 package com.example.skydex.ui.auth
 
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.skydex.data.repository.AuthGateway
+import com.example.skydex.ui.common.LogWarning
+import com.example.skydex.ui.common.androidLogWarning
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,7 +20,10 @@ data class RegisterUiState(
     val errorMessage: String? = null
 )
 
-class RegisterViewModel(private val auth: AuthGateway) : ViewModel() {
+class RegisterViewModel(
+    private val auth: AuthGateway,
+    private val logWarning: LogWarning = androidLogWarning
+) : ViewModel() {
 
     private val _state = MutableStateFlow(RegisterUiState())
     val state: StateFlow<RegisterUiState> = _state.asStateFlow()
@@ -45,7 +49,9 @@ class RegisterViewModel(private val auth: AuthGateway) : ViewModel() {
         _state.update { it.copy(submitting = true, errorMessage = null) }
         viewModelScope.launch {
             val result = auth.register(current.name, current.email, current.password)
-            result.exceptionOrNull()?.let { Log.w(TAG, "registration failed for ${current.email}", it) }
+            // The e-mail stays out of the message for the same reason it stays out of the login
+            // one: it is PII, it travels into bug reports, and the throwable is the diagnostic part.
+            result.exceptionOrNull()?.let { logWarning(TAG, "registration failed", it) }
             _state.update {
                 if (result.isSuccess) {
                     it.copy(submitting = false, registered = true)

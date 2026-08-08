@@ -1,5 +1,7 @@
 package com.example.skydex.ui.auth
 
+import com.example.skydex.ui.common.RecordingLogWarning
+import com.example.skydex.ui.common.noLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -36,7 +38,7 @@ class RegisterViewModelTest {
     @Test
     fun `a successful registration flips the state to registered`() = runTest(dispatcher) {
         val repository = FakeAuthRepository(result = Result.success(Unit))
-        val viewModel = RegisterViewModel(repository)
+        val viewModel = RegisterViewModel(repository, noLogging)
 
         viewModel.fillIn()
         viewModel.submit()
@@ -51,9 +53,11 @@ class RegisterViewModelTest {
     }
 
     @Test
-    fun `a rejected registration surfaces a message`() = runTest(dispatcher) {
-        val repository = FakeAuthRepository(result = Result.failure(IOException("boom")))
-        val viewModel = RegisterViewModel(repository)
+    fun `a rejected registration surfaces a message and logs the cause without the e-mail`() = runTest(dispatcher) {
+        val cause = IOException("boom")
+        val repository = FakeAuthRepository(result = Result.failure(cause))
+        val logWarning = RecordingLogWarning()
+        val viewModel = RegisterViewModel(repository, logWarning)
 
         viewModel.fillIn()
         viewModel.submit()
@@ -64,12 +68,19 @@ class RegisterViewModelTest {
             "Não foi possível registrar. O e-mail já existe?",
             viewModel.state.value.errorMessage
         )
+
+        val warning = logWarning.warnings.single()
+        assertEquals(cause, warning.cause)
+        assertFalse(
+            "the e-mail is PII and must not reach logcat",
+            warning.message.contains("pilot@skydex.com")
+        )
     }
 
     @Test
     fun `submitting with a blank field does not call the repository`() = runTest(dispatcher) {
         val repository = FakeAuthRepository(result = Result.success(Unit))
-        val viewModel = RegisterViewModel(repository)
+        val viewModel = RegisterViewModel(repository, noLogging)
 
         viewModel.fillIn(name = "")
         viewModel.submit()
@@ -87,7 +98,7 @@ class RegisterViewModelTest {
     @Test
     fun `a password below the backend minimum is rejected without a round trip`() = runTest(dispatcher) {
         val repository = FakeAuthRepository(result = Result.success(Unit))
-        val viewModel = RegisterViewModel(repository)
+        val viewModel = RegisterViewModel(repository, noLogging)
 
         viewModel.fillIn(password = "short")
         viewModel.submit()
@@ -104,7 +115,7 @@ class RegisterViewModelTest {
     @Test
     fun `a password of exactly the minimum length is accepted`() = runTest(dispatcher) {
         val repository = FakeAuthRepository(result = Result.success(Unit))
-        val viewModel = RegisterViewModel(repository)
+        val viewModel = RegisterViewModel(repository, noLogging)
 
         viewModel.fillIn(password = "8charact")
         viewModel.submit()
@@ -122,7 +133,7 @@ class RegisterViewModelTest {
     @Test
     fun `a second submit while one is in flight is ignored`() = runTest(dispatcher) {
         val repository = FakeAuthRepository(result = Result.success(Unit))
-        val viewModel = RegisterViewModel(repository)
+        val viewModel = RegisterViewModel(repository, noLogging)
 
         viewModel.fillIn()
         viewModel.submit()
@@ -136,7 +147,7 @@ class RegisterViewModelTest {
     @Test
     fun `the submitting flag is cleared once the call finishes`() = runTest(dispatcher) {
         val repository = FakeAuthRepository(result = Result.failure(IOException("boom")))
-        val viewModel = RegisterViewModel(repository)
+        val viewModel = RegisterViewModel(repository, noLogging)
 
         viewModel.fillIn()
         viewModel.submit()

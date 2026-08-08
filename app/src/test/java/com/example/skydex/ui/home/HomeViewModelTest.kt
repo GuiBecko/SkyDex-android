@@ -3,7 +3,9 @@ package com.example.skydex.ui.home
 import com.example.skydex.data.remote.FakeSkyDexApi
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
 import com.example.skydex.data.repository.CaptureRepository
+import com.example.skydex.ui.common.RecordingLogWarning
 import com.example.skydex.ui.common.UiState
+import com.example.skydex.ui.common.noLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -13,6 +15,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 import java.io.IOException
@@ -38,7 +41,7 @@ class HomeViewModelTest {
     fun `the screen starts loading before anything comes back`() = runTest(dispatcher) {
         api.nearbyResponse = { listOf(storm) }
 
-        val viewModel = HomeViewModel(repository)
+        val viewModel = HomeViewModel(repository, noLogging)
 
         assertEquals(UiState.Loading, viewModel.state.value)
     }
@@ -51,7 +54,7 @@ class HomeViewModelTest {
     fun `the nearby list is loaded without the screen asking for it`() = runTest(dispatcher) {
         api.nearbyResponse = { listOf(storm) }
 
-        val viewModel = HomeViewModel(repository)
+        val viewModel = HomeViewModel(repository, noLogging)
         advanceUntilIdle()
 
         assertEquals(UiState.Success(listOf(storm)), viewModel.state.value)
@@ -62,22 +65,32 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun `a failure becomes an error message`() = runTest(dispatcher) {
-        api.nearbyResponse = { throw IOException("offline") }
+    fun `a failure becomes an error message and logs the cause without the coordinates`() = runTest(dispatcher) {
+        val cause = IOException("offline")
+        api.nearbyResponse = { throw cause }
+        val logWarning = RecordingLogWarning()
 
-        val viewModel = HomeViewModel(repository)
+        val viewModel = HomeViewModel(repository, logWarning)
         advanceUntilIdle()
 
         assertEquals(
             UiState.Error("Não foi possível carregar os eventos próximos."),
             viewModel.state.value
         )
+
+        val warning = logWarning.warnings.single()
+        assertEquals(cause, warning.cause)
+        assertFalse(
+            "the user's position must not reach logcat",
+            warning.message.contains(HomeViewModel.DEFAULT_LATITUDE.toString()) ||
+                warning.message.contains(HomeViewModel.DEFAULT_LONGITUDE.toString())
+        )
     }
 
     @Test
     fun `load asks the api for the coordinates it was given`() = runTest(dispatcher) {
         api.nearbyResponse = { emptyList() }
-        val viewModel = HomeViewModel(repository)
+        val viewModel = HomeViewModel(repository, noLogging)
         advanceUntilIdle()
 
         viewModel.load(latitude = -30.03, longitude = -51.23)
@@ -91,7 +104,7 @@ class HomeViewModelTest {
     @Test
     fun `load returns to Loading while it is in flight`() = runTest(dispatcher) {
         api.nearbyResponse = { throw IOException("offline") }
-        val viewModel = HomeViewModel(repository)
+        val viewModel = HomeViewModel(repository, noLogging)
         advanceUntilIdle()
 
         api.nearbyResponse = { listOf(storm) }

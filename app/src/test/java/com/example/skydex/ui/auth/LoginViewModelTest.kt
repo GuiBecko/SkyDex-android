@@ -1,5 +1,7 @@
 package com.example.skydex.ui.auth
 
+import com.example.skydex.ui.common.RecordingLogWarning
+import com.example.skydex.ui.common.noLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -26,7 +28,7 @@ class LoginViewModelTest {
     @Test
     fun `successful login flips the state to LoggedIn`() = runTest(dispatcher) {
         val repository = FakeAuthRepository(result = Result.success(Unit))
-        val viewModel = LoginViewModel(repository)
+        val viewModel = LoginViewModel(repository, noLogging)
 
         viewModel.onEmailChanged("pilot@skydex.com")
         viewModel.onPasswordChanged("super-safe-password")
@@ -37,10 +39,17 @@ class LoginViewModelTest {
         assertEquals(null, viewModel.state.value.errorMessage)
     }
 
+    /**
+     * The user-facing copy is deliberately generic, so the throwable reaching logcat is the only
+     * thing that separates offline from a 401 — and the message must not carry the e-mail that
+     * would then travel into every captured bug report.
+     */
     @Test
     fun `a failed login surfaces a message and stays logged out`() = runTest(dispatcher) {
-        val repository = FakeAuthRepository(result = Result.failure(IOException("boom")))
-        val viewModel = LoginViewModel(repository)
+        val cause = IOException("boom")
+        val repository = FakeAuthRepository(result = Result.failure(cause))
+        val logWarning = RecordingLogWarning()
+        val viewModel = LoginViewModel(repository, logWarning)
 
         viewModel.onEmailChanged("pilot@skydex.com")
         viewModel.onPasswordChanged("wrong-but-long-enough")
@@ -52,12 +61,19 @@ class LoginViewModelTest {
             "Credenciais inválidas ou servidor indisponível.",
             viewModel.state.value.errorMessage
         )
+
+        val warning = logWarning.warnings.single()
+        assertEquals(cause, warning.cause)
+        assertFalse(
+            "the e-mail is PII and must not reach logcat",
+            warning.message.contains("pilot@skydex.com")
+        )
     }
 
     @Test
     fun `submitting with a blank field does not call the repository`() = runTest(dispatcher) {
         val repository = FakeAuthRepository(result = Result.success(Unit))
-        val viewModel = LoginViewModel(repository)
+        val viewModel = LoginViewModel(repository, noLogging)
 
         viewModel.onEmailChanged("pilot@skydex.com")
         viewModel.submit()
@@ -74,7 +90,7 @@ class LoginViewModelTest {
     @Test
     fun `the submitting flag is cleared once the call finishes`() = runTest(dispatcher) {
         val repository = FakeAuthRepository(result = Result.failure(IOException("boom")))
-        val viewModel = LoginViewModel(repository)
+        val viewModel = LoginViewModel(repository, noLogging)
 
         viewModel.onEmailChanged("pilot@skydex.com")
         viewModel.onPasswordChanged("wrong-but-long-enough")
@@ -93,7 +109,7 @@ class LoginViewModelTest {
     @Test
     fun `a second submit while one is in flight is ignored`() = runTest(dispatcher) {
         val repository = FakeAuthRepository(result = Result.success(Unit))
-        val viewModel = LoginViewModel(repository)
+        val viewModel = LoginViewModel(repository, noLogging)
 
         viewModel.onEmailChanged("pilot@skydex.com")
         viewModel.onPasswordChanged("super-safe-password")
@@ -109,7 +125,7 @@ class LoginViewModelTest {
     @Test
     fun `editing a field clears the previous error`() = runTest(dispatcher) {
         val repository = FakeAuthRepository(result = Result.success(Unit))
-        val viewModel = LoginViewModel(repository)
+        val viewModel = LoginViewModel(repository, noLogging)
 
         viewModel.submit()
         advanceUntilIdle()
