@@ -229,7 +229,7 @@ class SkyDexApiTest {
     fun `uploading a photo posts to the photos route and reads back the stored url`() {
         val api = apiAnswering(
             code = 201,
-            body = """{"photoUrl":"http://localhost:8080/api/photos/abc.jpg"}""",
+            body = """{"photoUrl":"/api/photos/abc.jpg"}""",
             token = "abc123"
         )
         val part = MultipartBody.Part.createFormData(
@@ -238,7 +238,9 @@ class SkyDexApiTest {
 
         val body = runBlocking { api.uploadPhoto(part) }
 
-        assertEquals("http://localhost:8080/api/photos/abc.jpg", body.photoUrl)
+        // The backend returns this relative, deliberately: the app persists exactly what it is
+        // given, so no host ever gets frozen into a stored capture.
+        assertEquals("/api/photos/abc.jpg", body.photoUrl)
         assertEquals("POST", received.single().method)
         assertEquals("/api/photos", received.single().target)
         assertEquals("Bearer abc123", received.single().authorization)

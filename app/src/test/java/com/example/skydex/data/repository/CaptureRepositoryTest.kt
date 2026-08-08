@@ -119,11 +119,11 @@ class CaptureRepositoryTest {
     fun `uploadPhoto sends the file as a jpeg part named file and returns the stored url`() = runBlocking {
         val file = temporaryFolder.newFile("storm.jpg")
         file.writeBytes(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xD9.toByte()))
-        api.uploadPhotoResponse = { PhotoUploadResponse("http://localhost:8080/api/photos/abc.jpg") }
+        api.uploadPhotoResponse = { PhotoUploadResponse("/api/photos/abc.jpg") }
 
         val result = repository.uploadPhoto(file)
 
-        assertEquals("http://localhost:8080/api/photos/abc.jpg", result.getOrNull())
+        assertEquals("/api/photos/abc.jpg", result.getOrNull())
         val part = api.uploadedParts.single()
         assertEquals(
             "form-data; name=\"file\"; filename=\"storm.jpg\"",

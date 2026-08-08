@@ -21,7 +21,13 @@ class CaptureRepository(private val api: SkyDexApi) {
     suspend fun create(request: CreateWeatherEventRequest): Result<WeatherEventResponse> =
         resultOf { api.createCapture(request) }
 
-    /** Uploads a local JPEG and returns the public URL the backend assigned to it. */
+    /**
+     * Uploads a local JPEG and returns the path the backend assigned to it.
+     *
+     * The returned value is **relative** (`/api/photos/<uuid>.jpg`) and is meant to be handed to
+     * [create] unchanged — the backend persists it as given and composes the host on the way back
+     * out, so a stored capture never carries an address that can go stale.
+     */
     suspend fun uploadPhoto(file: File): Result<String> = resultOf {
         val body = file.asRequestBody("image/jpeg".toMediaType())
         val part = MultipartBody.Part.createFormData("file", file.name, body)
