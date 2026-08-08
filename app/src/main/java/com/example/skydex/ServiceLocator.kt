@@ -19,10 +19,23 @@ object ServiceLocator {
         appContext = context.applicationContext
     }
 
-    val sessionStore: SessionStore by lazy { SessionStore(appContext) }
+    /**
+     * A bare `UninitializedPropertyAccessException` from a `lateinit` gives no hint about what
+     * went wrong. `SkyDexApplication.onCreate` covers every UI path, but a ContentProvider —
+     * `androidx.startup`, or any library that installs one — runs *before* it, so this is
+     * reachable. Say so plainly rather than leaving a mystery crash.
+     */
+    private fun requireContext(): Context {
+        check(::appContext.isInitialized) {
+            "ServiceLocator.init() was never called — is SkyDexApplication registered in the manifest?"
+        }
+        return appContext
+    }
+
+    val sessionStore: SessionStore by lazy { SessionStore(requireContext()) }
 
     val api: SkyDexApi by lazy {
-        ApiFactory.create(AuthInterceptor { sessionStore.blockingToken() })
+        ApiFactory.create(BuildConfig.BASE_URL, AuthInterceptor { sessionStore.blockingToken() })
     }
 
     val authRepository: AuthRepository by lazy { AuthRepository(api, sessionStore) }

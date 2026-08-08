@@ -62,11 +62,16 @@ fun LoginScreen(
                     isLoading = true
                     mensagemErro = ""
                     coroutineScope.launch {
-                        // A sessão é persistida pelo repositório; a tela só reage ao resultado.
-                        ServiceLocator.authRepository.login(email, password)
-                            .onSuccess { onLoginSuccess() }
-                            .onFailure { mensagemErro = "Credenciais inválidas ou erro no servidor." }
-                        isLoading = false
+                        try {
+                            // A sessão é persistida pelo repositório; a tela só reage ao resultado.
+                            ServiceLocator.authRepository.login(email, password)
+                                .onSuccess { onLoginSuccess() }
+                                .onFailure { mensagemErro = "Credenciais inválidas ou erro no servidor." }
+                        } finally {
+                            // `login` reemite CancellationException (ver `resultOf`), então sem o
+                            // `finally` o spinner ficaria travado se a tela saísse de cena.
+                            isLoading = false
+                        }
                     }
                 }
             },

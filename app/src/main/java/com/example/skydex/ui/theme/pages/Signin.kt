@@ -72,10 +72,15 @@ fun RegisterScreen(
                     isLoading = true
                     mensagemErro = ""
                     coroutineScope.launch {
-                        ServiceLocator.authRepository.register(nome, email, password)
-                            .onSuccess { onRegisterSuccess() } // Se der certo, volta para o login
-                            .onFailure { mensagemErro = "Erro ao registrar. Email já existe?" }
-                        isLoading = false
+                        try {
+                            ServiceLocator.authRepository.register(nome, email, password)
+                                .onSuccess { onRegisterSuccess() } // Se der certo, volta para o login
+                                .onFailure { mensagemErro = "Erro ao registrar. Email já existe?" }
+                        } finally {
+                            // `register` reemite CancellationException (ver `resultOf`), então sem
+                            // o `finally` o spinner ficaria travado se a tela saísse de cena.
+                            isLoading = false
+                        }
                     }
                 }
             },
