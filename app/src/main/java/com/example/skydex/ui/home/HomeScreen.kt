@@ -55,7 +55,11 @@ fun HomeScreen(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { viewModel.loadForCurrentPosition() }
 
-    LaunchedEffect(Unit) { requestLocation.launch(LOCATION_PERMISSIONS) }
+    // Guarded by the ViewModel's latch, not by `LaunchedEffect(Unit)` alone: this effect re-runs on
+    // every Activity recreation, and the ViewModel outlives them. See HomeViewModel.
+    LaunchedEffect(Unit) {
+        if (viewModel.shouldStartInitialLoad()) requestLocation.launch(LOCATION_PERMISSIONS)
+    }
 
     HomeContent(state = state, onStartCapture = onStartCapture, modifier = modifier)
 }

@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
@@ -28,6 +30,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -51,7 +54,22 @@ fun CaptureScreen(
     val state by viewModel.state.collectAsState()
 
     // Held outside the ViewModel because TakePicture only reports success/failure, not the URI.
-    var pendingFile by remember { mutableStateOf<File?>(null) }
+    //
+    // `rememberSaveable`, not `remember`: the system camera is a separate Activity and low-memory
+    // devices routinely kill the host process behind it. With a plain `remember` the path comes
+    // back null, the `file != null` check below fails, and a JPEG that exists on disk is dropped
+    // with no message at all — the user watches the photo they just took disappear. The absolute
+    // path is stored as a String because `File` is not `Parcelable`.
+    //
+    // What this deliberately does *not* fix: `CaptureViewModel` is a plain `ViewModel` with no
+    // `SavedStateHandle`, so its own state still dies with the process. After a kill behind the
+    // camera the user gets their photo back (via the line below) and the location is re-fetched by
+    // the `LaunchedEffect`, but a title and description typed *before* opening the camera come back
+    // empty; likewise a photo confirmed earlier and then lost to a kill while the app sat in the
+    // background, where there is no pending path to restore from. Both are visible losses — empty
+    // fields, an empty preview — not the silent one this fixes, so full restoration through
+    // `createSavedStateHandle()` is left to a later round rather than bolted on here.
+    var pendingPath by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Tracks whether the user has actively denied the permission (as opposed to simply never
     // having been asked yet, or having granted it and then lost the fix for some other reason —
@@ -61,9 +79,9 @@ fun CaptureScreen(
     var permissionDenied by remember { mutableStateOf(false) }
 
     val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
-        val file = pendingFile
+        val file = pendingPath?.let(::File)
         if (ok && file != null) viewModel.onPhotoTaken(file)
-        pendingFile = null
+        pendingPath = null
     }
 
     val requestLocation = rememberLauncherForActivityResult(
@@ -73,14 +91,22 @@ fun CaptureScreen(
         viewModel.refreshLocation()
     }
 
-    LaunchedEffect(Unit) { requestLocation.launch(LOCATION_PERMISSIONS) }
+    // Same latch as HomeScreen's, for the same reason: this effect re-runs on Activity recreation.
+    LaunchedEffect(Unit) {
+        if (viewModel.shouldRequestInitialLocation()) requestLocation.launch(LOCATION_PERMISSIONS)
+    }
 
     LaunchedEffect(state.saved) { if (state.saved) onSaved() }
 
+    // `verticalScroll`, because this content does not fit: a 220dp preview, a 110dp description
+    // box, a 50dp button and the gaps between them overflow a small phone as soon as `adjustResize`
+    // lifts the window for the keyboard — and "Salvar Registro" is the thing that goes off-screen.
+    // HomeScreen gets this for free from its LazyColumn; this screen never got the same treatment.
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFFF3F4F6))
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -101,7 +127,7 @@ fun CaptureScreen(
         OutlinedButton(
             onClick = {
                 val file = PhotoCaptureFiles.newCaptureFile(context)
-                pendingFile = file
+                pendingPath = file.absolutePath
                 takePicture.launch(PhotoCaptureFiles.uriFor(context, file))
             },
             modifier = Modifier.fillMaxWidth()

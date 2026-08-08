@@ -15,6 +15,14 @@ data class CaptureUiState(
     val title: String = "",
     val description: String = "",
     val photoFile: File? = null,
+    /**
+     * The path the server assigned to [photoFile], once it has been uploaded successfully.
+     *
+     * Kept so a retry after a failed `create` reuses the JPEG already on the server instead of
+     * uploading a second copy. Cleared by [CaptureViewModel.onPhotoTaken], because the moment the
+     * user retakes the shot this path points at the picture they just replaced.
+     */
+    val uploadedPhotoUrl: String? = null,
     val coordinates: Coordinates? = null,
     val locating: Boolean = false,
     val submitting: Boolean = false,
@@ -30,12 +38,28 @@ class CaptureViewModel(
     private val _state = MutableStateFlow(CaptureUiState())
     val state: StateFlow<CaptureUiState> = _state.asStateFlow()
 
+    private var initialLocationClaimed = false
+
     fun onTitleChanged(value: String) = _state.update { it.copy(title = value, errorMessage = null) }
 
     fun onDescriptionChanged(value: String) =
         _state.update { it.copy(description = value, errorMessage = null) }
 
-    fun onPhotoTaken(file: File) = _state.update { it.copy(photoFile = file, errorMessage = null) }
+    fun onPhotoTaken(file: File) =
+        _state.update { it.copy(photoFile = file, uploadedPhotoUrl = null, errorMessage = null) }
+
+    /**
+     * Claims the one screen-driven initial location request, returning `true` exactly once per
+     * ViewModel — same reasoning as `HomeViewModel.shouldStartInitialLoad`: `CaptureScreen`'s
+     * `LaunchedEffect(Unit)` re-runs on every Activity recreation, so without the latch a rotation
+     * re-launches the permission request and takes another GPS fix for a position already held.
+     * [refreshLocation] itself stays unconditional, because "Tentar novamente" has to work.
+     */
+    fun shouldRequestInitialLocation(): Boolean {
+        if (initialLocationClaimed) return false
+        initialLocationClaimed = true
+        return true
+    }
 
     fun refreshLocation() {
         _state.update { it.copy(locating = true) }
@@ -47,6 +71,12 @@ class CaptureViewModel(
 
     fun submit() {
         val current = _state.value
+
+        // The Button's `enabled = !state.submitting` only takes effect at the next recomposition,
+        // so two taps landing in the same frame are both dispatched against an enabled Button and
+        // both reach here. `saved` covers the other window: the screen navigates away from a
+        // `LaunchedEffect` on it, and until that runs `submitting` is already false again.
+        if (current.submitting || current.saved) return
 
         val error = when {
             current.title.isBlank() || current.description.isBlank() ->
@@ -67,18 +97,29 @@ class CaptureViewModel(
 
         _state.update { it.copy(submitting = true, errorMessage = null) }
         viewModelScope.launch {
-            val uploaded = captures.uploadPhoto(photoFile)
-            if (uploaded.isFailure) {
-                _state.update {
-                    it.copy(submitting = false, errorMessage = "Falha ao enviar a foto. Tente de novo.")
+            // Reuse the JPEG already on the server if a previous attempt got that far. Without
+            // this, every retry of a failed `create` leaves one more orphaned photo behind.
+            //
+            // The *first* orphan — upload succeeded, create failed, nothing ever references the
+            // file — cannot be cleaned up from here: the API exposes no delete-photo endpoint, so
+            // the client has no way to take it back. That is post-MVP backlog item #13 (orphaned
+            // JPEG cleanup), which is a server-side sweep by design. All this cache can do, and
+            // does, is stop one user tapping Save three times from becoming three orphans.
+            val photoUrl = current.uploadedPhotoUrl ?: run {
+                val uploaded = captures.uploadPhoto(photoFile)
+                if (uploaded.isFailure) {
+                    _state.update {
+                        it.copy(submitting = false, errorMessage = "Falha ao enviar a foto. Tente de novo.")
+                    }
+                    return@launch
                 }
-                return@launch
+                uploaded.getOrThrow().also { url -> _state.update { it.copy(uploadedPhotoUrl = url) } }
             }
 
             val request = CreateWeatherEventRequest(
                 title = current.title,
                 description = current.description,
-                photoUrl = uploaded.getOrThrow(),
+                photoUrl = photoUrl,
                 latitude = coordinates.latitude,
                 longitude = coordinates.longitude
             )

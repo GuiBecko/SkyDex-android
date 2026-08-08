@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -33,7 +34,8 @@ class CaptureViewModelTest {
     @Before fun setUp() = Dispatchers.setMain(dispatcher)
     @After fun tearDown() = Dispatchers.resetMain()
 
-    private fun jpeg(): File = tempFolder.newFile("photo.jpg").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+    private fun jpeg(name: String = "photo.jpg"): File =
+        tempFolder.newFile(name).apply { writeBytes(byteArrayOf(1, 2, 3)) }
 
     @Test
     fun `a complete capture uploads the photo then creates the event`() = runTest(dispatcher) {
@@ -54,13 +56,61 @@ class CaptureViewModelTest {
 
         val sent = gateway.createdRequests.single()
         assertEquals("Tempestade", sent.title)
+        assertEquals("Raios sobre o bairro", sent.description)
         // Relative, and it must be exactly what uploadPhoto returned. Task 7 constrains this
         // field server-side to `^/api/photos/[A-Za-z0-9._-]+\\.(jpg|png)$`, so a screen that
         // invented or rewrote the URL would be rejected at the API rather than here.
         assertEquals("/api/photos/uploaded.jpg", sent.photoUrl)
+        // Both coordinates, and deliberately far apart in magnitude and both negative-but-distinct
+        // (-30 vs -51): a latitude/longitude transposition has to change the number, so it cannot
+        // slip through on a fixture where the two happen to coincide. Getting this wrong pins every
+        // capture to the wrong meridian, and Phase 3's Open-Meteo validation would then score the
+        // event against a place the user was never standing in — silently, with no error anywhere.
         assertEquals(-30.0346, sent.latitude, 0.00001)
+        assertEquals(-51.2177, sent.longitude, 0.00001)
         // No capturedAt assertion: the request carries no such field. The server stamps the
         // capture time (Task 6), which is what stops a client backdating to yesterday's storm.
+    }
+
+    @Test
+    fun `refuses to submit without a title`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway()
+        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0346, -51.2177) }
+
+        viewModel.refreshLocation()
+        advanceUntilIdle()
+        viewModel.onTitleChanged("   ")
+        viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhotoTaken(jpeg())
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals("Preencha o título e a descrição.", viewModel.state.value.errorMessage)
+        assertEquals(0, gateway.uploadedFiles.size)
+        assertEquals(0, gateway.createdRequests.size)
+    }
+
+    /**
+     * A separate test from the one above on purpose: the guard is `title.isBlank() ||
+     * description.isBlank()`, two independent operands, and a test that only ever leaves the title
+     * empty keeps passing after the description half is deleted.
+     */
+    @Test
+    fun `refuses to submit without a description`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway()
+        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0346, -51.2177) }
+
+        viewModel.refreshLocation()
+        advanceUntilIdle()
+        viewModel.onTitleChanged("Tempestade")
+        viewModel.onDescriptionChanged("   ")
+        viewModel.onPhotoTaken(jpeg())
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals("Preencha o título e a descrição.", viewModel.state.value.errorMessage)
+        assertEquals(0, gateway.uploadedFiles.size)
+        assertEquals(0, gateway.createdRequests.size)
     }
 
     @Test
@@ -116,13 +166,181 @@ class CaptureViewModelTest {
         assertNotNull(viewModel.state.value.errorMessage)
         assertEquals(false, viewModel.state.value.saved)
     }
+
+    /**
+     * The Button's `enabled = !state.submitting` is not a guard, it is a hint: it only takes effect
+     * at the next recomposition, so two taps inside one frame are both dispatched against a Button
+     * that is still enabled. Without a check inside `submit()` that is two uploads, two rows in the
+     * feed and two JPEGs on the server for one storm.
+     */
+    @Test
+    fun `two taps in one frame produce exactly one capture`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway()
+        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0346, -51.2177) }
+
+        viewModel.refreshLocation()
+        advanceUntilIdle()
+        viewModel.onTitleChanged("Tempestade")
+        viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhotoTaken(jpeg())
+
+        // No advanceUntilIdle between them: this is the double tap, not two deliberate saves.
+        viewModel.submit()
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(1, gateway.uploadedFiles.size)
+        assertEquals(1, gateway.createdRequests.size)
+        assertTrue(viewModel.state.value.saved)
+    }
+
+    /**
+     * The `saved` half of the same guard, tested separately from the `submitting` half because they
+     * are independent operands. Navigation away from the screen is driven by a `LaunchedEffect` on
+     * `state.saved`, so there is a real window in which the capture is stored and the Button is
+     * enabled again — `submitting` is already false by then and would not stop a tap.
+     */
+    @Test
+    fun `submitting again after a successful save does nothing`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway()
+        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0346, -51.2177) }
+
+        viewModel.refreshLocation()
+        advanceUntilIdle()
+        viewModel.onTitleChanged("Tempestade")
+        viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhotoTaken(jpeg())
+        viewModel.submit()
+        advanceUntilIdle()
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(1, gateway.uploadedFiles.size)
+        assertEquals(1, gateway.createdRequests.size)
+    }
+
+    /**
+     * Upload succeeds, create fails: the JPEG is on the server referenced by nothing. That first
+     * orphan is not fixable from here (there is no delete-photo endpoint), but the *compounding*
+     * is: a retry that re-uploads turns one user tapping Save three times into three orphans.
+     */
+    @Test
+    fun `a retry after a failed create reuses the photo already uploaded`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway(createFailure = IOException("create rejected"))
+        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0346, -51.2177) }
+
+        viewModel.refreshLocation()
+        advanceUntilIdle()
+        viewModel.onTitleChanged("Tempestade")
+        viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhotoTaken(jpeg())
+
+        viewModel.submit()
+        advanceUntilIdle()
+        assertEquals("Falha ao salvar o registro. Tente de novo.", viewModel.state.value.errorMessage)
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(1, gateway.uploadedFiles.size)
+        assertEquals(2, gateway.createdRequests.size)
+        // And the reused path is still the one the server handed back, not a locally invented one.
+        assertEquals("/api/photos/uploaded.jpg", gateway.createdRequests.last().photoUrl)
+    }
+
+    /** The retry succeeds on the second attempt without a second upload. */
+    @Test
+    fun `a successful retry saves the capture with the cached photo`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway(createFailure = IOException("create rejected"))
+        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0346, -51.2177) }
+
+        viewModel.refreshLocation()
+        advanceUntilIdle()
+        viewModel.onTitleChanged("Tempestade")
+        viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhotoTaken(jpeg())
+        viewModel.submit()
+        advanceUntilIdle()
+
+        gateway.createFailure = null
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.state.value.saved)
+        assertNull(viewModel.state.value.errorMessage)
+        assertEquals(1, gateway.uploadedFiles.size)
+    }
+
+    /**
+     * The other edge of the cache: reusing the uploaded path is only correct while the photo has
+     * not changed. If the user retakes the shot after a failed create, the cached path points at
+     * the picture they just replaced — caching it blindly would file the capture under the wrong
+     * image, which is worse than the orphan the cache exists to prevent.
+     */
+    @Test
+    fun `retaking the photo after a failed create uploads the new one`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway(createFailure = IOException("create rejected"))
+        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0346, -51.2177) }
+        val first = jpeg("first.jpg")
+        val second = jpeg("second.jpg")
+
+        viewModel.refreshLocation()
+        advanceUntilIdle()
+        viewModel.onTitleChanged("Tempestade")
+        viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhotoTaken(first)
+        viewModel.submit()
+        advanceUntilIdle()
+
+        viewModel.onPhotoTaken(second)
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(listOf(first, second), gateway.uploadedFiles)
+    }
+
+    /**
+     * Same shape as HomeScreen's: `CaptureScreen`'s `LaunchedEffect(Unit)` re-runs on every Activity
+     * recreation, so without this latch a rotation re-launches the permission request and re-runs a
+     * GPS fix on a ViewModel that already has a position.
+     */
+    @Test
+    fun `the initial location request is claimed once per view model`() = runTest(dispatcher) {
+        val viewModel = CaptureViewModel(FakeCaptureGateway()) { Coordinates(-30.0346, -51.2177) }
+
+        assertTrue(viewModel.shouldRequestInitialLocation())
+        assertFalse(viewModel.shouldRequestInitialLocation())
+    }
+
+    /** The latch must not disable the "Tentar novamente" button. */
+    @Test
+    fun `refreshLocation still works after the initial request was claimed`() = runTest(dispatcher) {
+        var fixes = 0
+        val viewModel = CaptureViewModel(FakeCaptureGateway()) {
+            fixes++
+            Coordinates(-30.0346, -51.2177)
+        }
+
+        viewModel.shouldRequestInitialLocation()
+        viewModel.refreshLocation()
+        advanceUntilIdle()
+        viewModel.refreshLocation()
+        advanceUntilIdle()
+
+        assertEquals(2, fixes)
+    }
 }
 
 class FakeCaptureGateway(
     // A relative path, because that is what the real endpoint returns. A fake that hands back
     // an absolute CDN URL would let the ViewModel pass a test it fails against the server,
     // which rejects anything outside `^/api/photos/...` (Task 7).
-    private val uploadResult: Result<String> = Result.success("/api/photos/uploaded.jpg")
+    private val uploadResult: Result<String> = Result.success("/api/photos/uploaded.jpg"),
+    // Set to open the window that orphans a JPEG: the upload lands, the create does not, and the
+    // photo on the server is now referenced by nothing. `var` so a test can also close the window
+    // again and watch the retry succeed.
+    var createFailure: Throwable? = null
 ) : CaptureGateway {
 
     val uploadedFiles = mutableListOf<File>()
@@ -135,6 +353,7 @@ class FakeCaptureGateway(
 
     override suspend fun create(request: CreateWeatherEventRequest): Result<WeatherEventResponse> {
         createdRequests += request
+        createFailure?.let { return Result.failure(it) }
         return Result.success(
             WeatherEventResponse(
                 id = "00000000-0000-0000-0000-000000000001",

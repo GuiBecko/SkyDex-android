@@ -3,7 +3,9 @@ package com.example.skydex.ui.home
 import com.example.skydex.data.remote.FakeSkyDexApi
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
 import com.example.skydex.data.repository.CaptureRepository
+import com.example.skydex.ui.common.RecordingLogWarning
 import com.example.skydex.ui.common.UiState
+import com.example.skydex.ui.common.noLogging
 import com.example.skydex.util.Coordinates
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -14,6 +16,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.IOException
@@ -49,7 +53,7 @@ class HomeViewModelTest {
     fun `starts in Loading before anything comes back`() = runTest(dispatcher) {
         api.nearbyResponse = { listOf(storm) }
 
-        val viewModel = HomeViewModel(repository) { coordinates }
+        val viewModel = HomeViewModel(repository, locationProvider = { coordinates }, logWarning = noLogging)
 
         assertEquals(UiState.Loading, viewModel.state.value)
     }
@@ -57,7 +61,7 @@ class HomeViewModelTest {
     @Test
     fun `loads the nearby phenomena for the device's current position`() = runTest(dispatcher) {
         api.nearbyResponse = { listOf(storm) }
-        val viewModel = HomeViewModel(repository) { coordinates }
+        val viewModel = HomeViewModel(repository, locationProvider = { coordinates }, logWarning = noLogging)
 
         viewModel.loadForCurrentPosition()
         advanceUntilIdle()
@@ -71,7 +75,7 @@ class HomeViewModelTest {
 
     @Test
     fun `a missing fix becomes a GPS prompt instead of calling the api`() = runTest(dispatcher) {
-        val viewModel = HomeViewModel(repository) { null }
+        val viewModel = HomeViewModel(repository, locationProvider = { null }, logWarning = noLogging)
 
         viewModel.loadForCurrentPosition()
         advanceUntilIdle()
@@ -86,7 +90,7 @@ class HomeViewModelTest {
     @Test
     fun `a nearby lookup failure becomes a generic error message`() = runTest(dispatcher) {
         api.nearbyResponse = { throw IOException("offline") }
-        val viewModel = HomeViewModel(repository) { coordinates }
+        val viewModel = HomeViewModel(repository, locationProvider = { coordinates }, logWarning = noLogging)
 
         viewModel.loadForCurrentPosition()
         advanceUntilIdle()
@@ -97,11 +101,75 @@ class HomeViewModelTest {
         )
     }
 
+    /**
+     * The cause has to reach logcat — the user-facing copy is deliberately generic, so offline, an
+     * expired token and a parse failure are indistinguishable without it.
+     *
+     * The coordinates must **not**. `LogWarning`'s contract says messages name the operation and
+     * never its subject, and Home is the one place where the subject is the user's real GPS
+     * position rather than an e-mail address: they are in scope three lines from the call site, and
+     * interpolating them would be a one-character mistake that ships a location trail into every
+     * bug report. The assertion is what keeps that contract enforced rather than merely intended.
+     */
+    @Test
+    fun `a nearby lookup failure logs its cause without leaking the position`() = runTest(dispatcher) {
+        val cause = IOException("offline")
+        api.nearbyResponse = { throw cause }
+        val logWarning = RecordingLogWarning()
+        val viewModel =
+            HomeViewModel(repository, locationProvider = { coordinates }, logWarning = logWarning)
+
+        viewModel.loadForCurrentPosition()
+        advanceUntilIdle()
+
+        val warning = logWarning.warnings.single()
+        assertEquals(cause, warning.cause)
+        assertFalse(warning.message.contains(coordinates.latitude.toString()))
+        assertFalse(warning.message.contains(coordinates.longitude.toString()))
+    }
+
+    /**
+     * The fetch is started by the ViewModel's own bookkeeping, not by the composable: HomeScreen's
+     * `LaunchedEffect(Unit)` re-runs on every Activity recreation (the manifest declares no
+     * `configChanges`), so a rotation would re-launch the permission request, re-run a GPS fix and
+     * re-hit the network — throwing away a list the surviving ViewModel already holds.
+     */
+    @Test
+    fun `the initial load is claimed once per view model`() = runTest(dispatcher) {
+        val viewModel =
+            HomeViewModel(repository, locationProvider = { coordinates }, logWarning = noLogging)
+
+        assertTrue(viewModel.shouldStartInitialLoad())
+        assertFalse(viewModel.shouldStartInitialLoad())
+    }
+
+    /**
+     * And the guard lives in that one-shot latch, *not* in `loadForCurrentPosition`. Short-circuiting
+     * the load whenever the state is already `Success` would look equivalent and would quietly break
+     * the retry button, which is the one control the user has when the list is stale or wrong.
+     */
+    @Test
+    fun `an explicit reload still hits the api after the initial load was claimed`() = runTest(dispatcher) {
+        api.nearbyResponse = { listOf(storm) }
+        val viewModel =
+            HomeViewModel(repository, locationProvider = { coordinates }, logWarning = noLogging)
+
+        viewModel.shouldStartInitialLoad()
+        viewModel.loadForCurrentPosition()
+        advanceUntilIdle()
+        assertEquals(UiState.Success(HomeData(coordinates, listOf(storm))), viewModel.state.value)
+
+        viewModel.loadForCurrentPosition()
+        advanceUntilIdle()
+
+        assertEquals(2, api.nearbyCalls.size)
+    }
+
     /** A retry after an error must show the spinner again rather than the stale error. */
     @Test
     fun `loadForCurrentPosition returns to Loading while it is in flight`() = runTest(dispatcher) {
         api.nearbyResponse = { throw IOException("offline") }
-        val viewModel = HomeViewModel(repository) { coordinates }
+        val viewModel = HomeViewModel(repository, locationProvider = { coordinates }, logWarning = noLogging)
         viewModel.loadForCurrentPosition()
         advanceUntilIdle()
 
