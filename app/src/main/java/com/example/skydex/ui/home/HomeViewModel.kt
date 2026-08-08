@@ -4,52 +4,39 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
 import com.example.skydex.data.repository.CaptureRepository
-import com.example.skydex.ui.common.LogWarning
 import com.example.skydex.ui.common.UiState
-import com.example.skydex.ui.common.androidLogWarning
+import com.example.skydex.util.Coordinates
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+data class HomeData(
+    val coordinates: Coordinates?,
+    val phenomena: List<NearbyPhenomenonResponse>
+)
+
 class HomeViewModel(
     private val captures: CaptureRepository,
-    private val logWarning: LogWarning = androidLogWarning
+    private val locationProvider: suspend () -> Coordinates?
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow<UiState<List<NearbyPhenomenonResponse>>>(UiState.Loading)
-    val state: StateFlow<UiState<List<NearbyPhenomenonResponse>>> = _state.asStateFlow()
+    private val _state = MutableStateFlow<UiState<HomeData>>(UiState.Loading)
+    val state: StateFlow<UiState<HomeData>> = _state.asStateFlow()
 
-    /**
-     * Loading from `init` rather than from a `LaunchedEffect` in the screen is deliberate: the
-     * ViewModel outlives a rotation, the composition does not, so an effect would throw the list
-     * away and re-fetch every time the phone turns.
-     */
-    init {
-        load(DEFAULT_LATITUDE, DEFAULT_LONGITUDE)
-    }
-
-    fun load(latitude: Double, longitude: Double) {
+    fun loadForCurrentPosition() {
         _state.value = UiState.Loading
         viewModelScope.launch {
-            captures.nearby(latitude, longitude)
-                .onSuccess { _state.value = UiState.Success(it) }
+            val coordinates = locationProvider()
+            if (coordinates == null) {
+                _state.value = UiState.Error("Ative o GPS para ver os fenômenos da sua região.")
+                return@launch
+            }
+            captures.nearby(coordinates.latitude, coordinates.longitude)
+                .onSuccess { _state.value = UiState.Success(HomeData(coordinates, it)) }
                 .onFailure {
-                    // The user-facing copy stays generic on purpose; the cause — offline, an
-                    // expired token, a parse failure — is only distinguishable in logcat. The
-                    // coordinates stay out of it: they are the user's location, and logcat is
-                    // the wrong place for them.
-                    logWarning(TAG, "nearby lookup failed", it)
                     _state.value = UiState.Error("Não foi possível carregar os eventos próximos.")
                 }
         }
-    }
-
-    companion object {
-        // TODO(Task 9): replace the placeholder with the phone's real GPS position.
-        const val DEFAULT_LATITUDE = -23.55
-        const val DEFAULT_LONGITUDE = -46.63
-
-        private const val TAG = "HomeViewModel"
     }
 }

@@ -6,4 +6,5 @@ object Routes {
     const val HOME = "home"
     const val NEARBY = "nearby"
     const val MY_CAPTURES = "my_captures"
+    const val CAPTURE = "capture"
 }

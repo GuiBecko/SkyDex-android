@@ -18,6 +18,8 @@ import com.example.skydex.ui.auth.LoginScreen
 import com.example.skydex.ui.auth.LoginViewModel
 import com.example.skydex.ui.auth.RegisterScreen
 import com.example.skydex.ui.auth.RegisterViewModel
+import com.example.skydex.ui.capture.CaptureScreen
+import com.example.skydex.ui.capture.CaptureViewModel
 import com.example.skydex.ui.captures.MyCapturesScreen
 import com.example.skydex.ui.captures.MyCapturesViewModel
 import com.example.skydex.ui.components.AppBottomBar
@@ -99,17 +101,50 @@ fun SkyDexNavHost(session: Session?, modifier: Modifier = Modifier) {
             }
 
             composable(Routes.HOME) {
-                val vm: HomeViewModel = viewModel { HomeViewModel(ServiceLocator.captureRepository) }
-                HomeScreen(viewModel = vm)
+                val vm: HomeViewModel = viewModel {
+                    HomeViewModel(
+                        ServiceLocator.captureRepository,
+                        ServiceLocator.deviceLocation::current
+                    )
+                }
+                HomeScreen(
+                    viewModel = vm,
+                    onStartCapture = { navController.navigate(Routes.CAPTURE) }
+                )
             }
 
-            // Registered but unreachable: HOME and NEARBY would render the same list, so
-            // AppBottomBar deliberately ships no NEARBY tab rather than two controls that produce
-            // an identical screen. Task 10 gives HOME its own dashboard with the capture button,
-            // leaves NEARBY as the phenomena list, and puts the tab back.
+            // Registered but unreachable: AppBottomBar still ships no NEARBY tab. See the note on
+            // Routes.NEARBY usage in AppBottomBar.kt — restoring the tab is left to whichever task
+            // actually gives NEARBY a screen distinct from HOME's dashboard (see the report on this
+            // task for why Task 10's own plan leaves that split undone).
             composable(Routes.NEARBY) {
-                val vm: HomeViewModel = viewModel { HomeViewModel(ServiceLocator.captureRepository) }
-                HomeScreen(viewModel = vm)
+                val vm: HomeViewModel = viewModel {
+                    HomeViewModel(
+                        ServiceLocator.captureRepository,
+                        ServiceLocator.deviceLocation::current
+                    )
+                }
+                HomeScreen(
+                    viewModel = vm,
+                    onStartCapture = { navController.navigate(Routes.CAPTURE) }
+                )
+            }
+
+            composable(Routes.CAPTURE) {
+                val vm: CaptureViewModel = viewModel {
+                    CaptureViewModel(
+                        ServiceLocator.captureRepository,
+                        ServiceLocator.deviceLocation::current
+                    )
+                }
+                CaptureScreen(
+                    viewModel = vm,
+                    onSaved = {
+                        navController.navigate(Routes.MY_CAPTURES) {
+                            popUpTo(Routes.CAPTURE) { inclusive = true }
+                        }
+                    }
+                )
             }
 
             composable(Routes.MY_CAPTURES) {

@@ -4,13 +4,14 @@ import com.example.skydex.data.remote.SkyDexApi
 import com.example.skydex.data.remote.dto.CreateWeatherEventRequest
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
 import com.example.skydex.data.remote.dto.WeatherEventResponse
+import com.example.skydex.ui.capture.CaptureGateway
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import retrofit2.HttpException
 import java.io.File
 
-class CaptureRepository(private val api: SkyDexApi) {
+class CaptureRepository(private val api: SkyDexApi) : CaptureGateway {
 
     suspend fun myCaptures(): Result<List<WeatherEventResponse>> =
         resultOf { api.myCaptures() }
@@ -18,7 +19,7 @@ class CaptureRepository(private val api: SkyDexApi) {
     suspend fun nearby(latitude: Double, longitude: Double): Result<List<NearbyPhenomenonResponse>> =
         resultOf { api.nearbyPhenomena(latitude, longitude) }
 
-    suspend fun create(request: CreateWeatherEventRequest): Result<WeatherEventResponse> =
+    override suspend fun create(request: CreateWeatherEventRequest): Result<WeatherEventResponse> =
         resultOf { api.createCapture(request) }
 
     /**
@@ -28,7 +29,7 @@ class CaptureRepository(private val api: SkyDexApi) {
      * [create] unchanged — the backend persists it as given and composes the host on the way back
      * out, so a stored capture never carries an address that can go stale.
      */
-    suspend fun uploadPhoto(file: File): Result<String> = resultOf {
+    override suspend fun uploadPhoto(file: File): Result<String> = resultOf {
         val body = file.asRequestBody("image/jpeg".toMediaType())
         val part = MultipartBody.Part.createFormData("file", file.name, body)
         api.uploadPhoto(part).photoUrl

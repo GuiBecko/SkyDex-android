@@ -1,6 +1,9 @@
 package com.example.skydex.ui.home
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Card
@@ -23,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -35,17 +40,31 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
 import com.example.skydex.ui.common.UiState
+import com.example.skydex.util.Coordinates
+import com.example.skydex.util.LOCATION_PERMISSIONS
 
 @Composable
-fun HomeScreen(viewModel: HomeViewModel, modifier: Modifier = Modifier) {
+fun HomeScreen(
+    viewModel: HomeViewModel,
+    onStartCapture: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val state by viewModel.state.collectAsState()
-    HomeContent(state = state, modifier = modifier)
+
+    val requestLocation = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { viewModel.loadForCurrentPosition() }
+
+    LaunchedEffect(Unit) { requestLocation.launch(LOCATION_PERMISSIONS) }
+
+    HomeContent(state = state, onStartCapture = onStartCapture, modifier = modifier)
 }
 
 /** The screen without its ViewModel, so the `@Preview`s below can render it. */
 @Composable
 private fun HomeContent(
-    state: UiState<List<NearbyPhenomenonResponse>>,
+    state: UiState<HomeData>,
+    onStartCapture: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -64,6 +83,8 @@ private fun HomeContent(
             )
         }
 
+        item { MainActionCard(onClick = onStartCapture) }
+
         when (state) {
             is UiState.Loading -> item {
                 Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -80,7 +101,7 @@ private fun HomeContent(
                 )
             }
 
-            is UiState.Success -> if (state.data.isEmpty()) {
+            is UiState.Success -> if (state.data.phenomena.isEmpty()) {
                 item {
                     Text(
                         text = "Nenhum evento severo detectado na sua região.",
@@ -90,8 +111,44 @@ private fun HomeContent(
                     )
                 }
             } else {
-                items(state.data) { phenomenon -> PhenomenonCard(phenomenon) }
+                items(state.data.phenomena) { phenomenon -> PhenomenonCard(phenomenon) }
             }
+        }
+    }
+}
+
+/**
+ * The screen's primary call to action: everything else on Home is informational, this is the one
+ * thing the user came to the app to do. Kept visually distinct — filled with the brand accent
+ * rather than the white cards below — so it reads as the entry point into the capture flow.
+ */
+@Composable
+private fun MainActionCard(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF0284C7)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(20.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.AddAPhoto,
+                contentDescription = null,
+                tint = Color.White
+            )
+            Text(
+                text = "Registrar Novo Evento",
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -167,20 +224,28 @@ private val previewPhenomena = listOf(
     NearbyPhenomenonResponse("Névoa", "2026-08-07T06:00", null, "Tranquilo")
 )
 
+private val previewCoordinates = Coordinates(-23.55, -46.63)
+
 @Preview(showBackground = true)
 @Composable
 private fun HomeContentPreview() {
-    HomeContent(state = UiState.Success(previewPhenomena))
+    HomeContent(
+        state = UiState.Success(HomeData(previewCoordinates, previewPhenomena)),
+        onStartCapture = {}
+    )
 }
 
 @Preview(showBackground = true, name = "Eventos próximos - carregando")
 @Composable
 private fun HomeContentLoadingPreview() {
-    HomeContent(state = UiState.Loading)
+    HomeContent(state = UiState.Loading, onStartCapture = {})
 }
 
 @Preview(showBackground = true, name = "Eventos próximos - erro")
 @Composable
 private fun HomeContentErrorPreview() {
-    HomeContent(state = UiState.Error("Não foi possível carregar os eventos próximos."))
+    HomeContent(
+        state = UiState.Error("Não foi possível carregar os eventos próximos."),
+        onStartCapture = {}
+    )
 }
