@@ -24,6 +24,8 @@ class CaptureRepositoryTest {
         description = "Uma torre de nuvens",
         photoUrl = "https://example.test/cb.jpg",
         capturedAt = "2026-08-07T10:00:00Z",
+        latitude = -23.55,
+        longitude = -46.63,
         userId = "u1",
         authorName = "Pilot"
     )
@@ -58,7 +60,8 @@ class CaptureRepositoryTest {
 
     @Test
     fun `create forwards the request body`() = runBlocking {
-        val request = CreateWeatherEventRequest("Cumulonimbus", "Uma torre de nuvens", "https://example.test/cb.jpg")
+        // TODO(task-10): replace with the device's real position
+        val request = CreateWeatherEventRequest("Cumulonimbus", "Uma torre de nuvens", "https://example.test/cb.jpg", 0.0, 0.0)
         api.createResponse = { capture }
 
         assertEquals(capture, repository.create(request).getOrNull())

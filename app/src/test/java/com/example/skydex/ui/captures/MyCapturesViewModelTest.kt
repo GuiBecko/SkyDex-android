@@ -32,6 +32,8 @@ class MyCapturesViewModelTest {
         description = "Uma torre de nuvens",
         photoUrl = "https://example.test/cb.jpg",
         capturedAt = "2026-08-07T10:00:00Z",
+        latitude = -23.55,
+        longitude = -46.63,
         userId = "u1",
         authorName = "Pilot"
     )

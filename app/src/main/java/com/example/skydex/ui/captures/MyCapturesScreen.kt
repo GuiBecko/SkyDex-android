@@ -125,6 +125,8 @@ private val previewCaptures = listOf(
         description = "Uma torre de nuvens enorme no fim da tarde.",
         photoUrl = "",
         capturedAt = "2026-08-07T18:20:00Z",
+        latitude = -23.55,
+        longitude = -46.63,
         userId = "u1",
         authorName = "Pilot"
     ),
@@ -134,6 +136,8 @@ private val previewCaptures = listOf(
         description = "Logo depois da chuva de granizo.",
         photoUrl = "",
         capturedAt = "2026-08-06T16:05:00Z",
+        latitude = -23.55,
+        longitude = -46.63,
         userId = "u1",
         authorName = "Pilot"
     )
