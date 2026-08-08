@@ -4,12 +4,15 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
+import java.io.IOException
 
 data class Session(val token: String, val userId: String)
 
@@ -31,7 +34,16 @@ class SessionStore(private val dataStore: DataStore<Preferences>) {
         val USER_ID = stringPreferencesKey("user_id")
     }
 
-    val session: Flow<Session?> = dataStore.data.map { prefs ->
+    /**
+     * The `catch` is part of DataStore's contract, not defensive padding: a corrupt or unreadable
+     * `.preferences_pb` surfaces as an [IOException] *inside the flow*. The whole UI is now gated
+     * on this flow, so an uncaught one would take the composition down with no login screen left
+     * standing to fall back to. An unreadable file means "no session" — the user logs in again.
+     * Anything that is not an [IOException] is a programming error and still propagates.
+     */
+    val session: Flow<Session?> = dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { prefs ->
         val token = prefs[Keys.TOKEN]
         val userId = prefs[Keys.USER_ID]
         if (token.isNullOrBlank() || userId.isNullOrBlank()) null else Session(token, userId)

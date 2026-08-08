@@ -1,7 +1,9 @@
 package com.example.skydex.ui.auth
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.skydex.data.repository.AuthGateway
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,13 +38,21 @@ class LoginViewModel(private val auth: AuthGateway) : ViewModel() {
             return
         }
 
+        // Re-entrancy is a ViewModel invariant, so it is guarded here and not only by the screen
+        // disabling its button: two taps in the same frame would otherwise launch two logins.
+        if (current.submitting) return
+
         _state.update { it.copy(submitting = true, errorMessage = null) }
         viewModelScope.launch {
             val result = auth.login(current.email, current.password)
+            result.exceptionOrNull()?.let { Log.w(TAG, "login failed for ${current.email}", it) }
             _state.update {
                 if (result.isSuccess) {
                     it.copy(submitting = false, loggedIn = true)
                 } else {
+                    // Deliberately generic for the user — a message that distinguished "wrong
+                    // password" from "no such account" would enumerate registered e-mails. The
+                    // real cause goes to logcat above.
                     it.copy(
                         submitting = false,
                         errorMessage = "Credenciais inválidas ou servidor indisponível."
@@ -50,5 +60,9 @@ class LoginViewModel(private val auth: AuthGateway) : ViewModel() {
                 }
             }
         }
+    }
+
+    private companion object {
+        const val TAG = "LoginViewModel"
     }
 }

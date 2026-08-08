@@ -1,5 +1,6 @@
 package com.example.skydex.ui.home
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
@@ -29,7 +30,12 @@ class HomeViewModel(private val captures: CaptureRepository) : ViewModel() {
         viewModelScope.launch {
             captures.nearby(latitude, longitude)
                 .onSuccess { _state.value = UiState.Success(it) }
-                .onFailure { _state.value = UiState.Error("Não foi possível carregar os eventos próximos.") }
+                .onFailure {
+                    // The user-facing copy stays generic on purpose; the cause — offline, an
+                    // expired token, a parse failure — is only distinguishable in logcat.
+                    Log.w(TAG, "nearby($latitude, $longitude) failed", it)
+                    _state.value = UiState.Error("Não foi possível carregar os eventos próximos.")
+                }
         }
     }
 
@@ -37,5 +43,7 @@ class HomeViewModel(private val captures: CaptureRepository) : ViewModel() {
         // TODO(Task 9): replace the placeholder with the phone's real GPS position.
         const val DEFAULT_LATITUDE = -23.55
         const val DEFAULT_LONGITUDE = -46.63
+
+        private const val TAG = "HomeViewModel"
     }
 }

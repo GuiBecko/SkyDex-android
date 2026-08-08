@@ -1,5 +1,7 @@
 package com.example.skydex.ui.auth
 
+import com.example.skydex.data.repository.AuthGateway
+
 /**
  * [com.example.skydex.data.repository.AuthRepository] is a final class, so this fake subclasses
  * nothing — it re-implements the three methods the auth ViewModels touch behind the

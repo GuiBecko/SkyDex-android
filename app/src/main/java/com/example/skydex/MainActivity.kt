@@ -4,8 +4,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.ui.Modifier
 import com.example.skydex.data.session.Session
 import com.example.skydex.ui.navigation.SkyDexNavHost
 import com.example.skydex.ui.theme.SkyDexTheme
@@ -25,10 +28,17 @@ class MainActivity : ComponentActivity() {
                     ServiceLocator.sessionStore.session.collect { value = SessionSnapshot(it) }
                 }
 
-                // Draw nothing until DataStore has answered. `NavHost` fixes its start
+                // Draw no *screen* until DataStore has answered. `NavHost` fixes its start
                 // destination the first time it is composed, so composing it against a
                 // not-yet-read session would strand a logged-in user on the login screen.
-                snapshot?.let { SkyDexNavHost(session = it.session) }
+                //
+                // The empty Surface is not cosmetic: `produceState` is not saveable, so this
+                // branch is re-entered on every Activity recreation, not just cold start. Without
+                // it the frame shows the bare window background instead of the app's.
+                when (val current = snapshot) {
+                    null -> Surface(modifier = Modifier.fillMaxSize()) {}
+                    else -> SkyDexNavHost(session = current.session)
+                }
             }
         }
     }

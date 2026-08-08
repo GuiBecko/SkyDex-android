@@ -45,6 +45,15 @@ android {
         compose = true
         buildConfig = true
     }
+    testOptions {
+        unitTests {
+            // The JVM `android.jar` is all stubs that throw. The ViewModels log their failure
+            // causes with `android.util.Log`, which every ViewModel test that exercises a failure
+            // path then walks into. Returning defaults makes those calls the no-ops they should be
+            // off-device; nothing in the suite relies on a stub throwing.
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {

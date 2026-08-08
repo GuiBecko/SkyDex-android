@@ -104,7 +104,7 @@ private fun CaptureCard(capture: WeatherEventResponse) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(150.dp)
-                    .background(Color.LightGray) // Fundo enquanto a foto carrega.
+                    .background(Color.LightGray) // Placeholder background while the photo loads.
             )
 
             Spacer(modifier = Modifier.height(12.dp))

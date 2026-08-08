@@ -32,6 +32,9 @@ class FakeSkyDexApi : SkyDexApi {
     /** Ids passed to `deleteCapture`, in order. */
     val deletedIds = mutableListOf<String>()
 
+    /** Bodies passed to `createCapture`, in order. */
+    val createdRequests = mutableListOf<CreateWeatherEventRequest>()
+
     override suspend fun login(request: LoginRequest): LoginResponse = unsupported("login")
 
     override suspend fun register(request: RegisterRequest): UserResponse = unsupported("register")
@@ -40,8 +43,10 @@ class FakeSkyDexApi : SkyDexApi {
 
     override suspend fun myCaptures(): List<WeatherEventResponse> = myCapturesResponse()
 
-    override suspend fun createCapture(request: CreateWeatherEventRequest): WeatherEventResponse =
-        createResponse(request)
+    override suspend fun createCapture(request: CreateWeatherEventRequest): WeatherEventResponse {
+        createdRequests += request
+        return createResponse(request)
+    }
 
     override suspend fun deleteCapture(id: String): Response<Unit> {
         deletedIds += id

@@ -85,6 +85,26 @@ class LoginViewModelTest {
         assertFalse(viewModel.state.value.submitting)
     }
 
+    /**
+     * Two taps land in the same frame more often than anyone expects. `enabled = !submitting` on
+     * the button is a UI-level guard on a ViewModel-level invariant, and it does not recompose
+     * fast enough to stop the second tap — so `submit()` has to be idempotent while in flight.
+     */
+    @Test
+    fun `a second submit while one is in flight is ignored`() = runTest(dispatcher) {
+        val repository = FakeAuthRepository(result = Result.success(Unit))
+        val viewModel = LoginViewModel(repository)
+
+        viewModel.onEmailChanged("pilot@skydex.com")
+        viewModel.onPasswordChanged("super-safe-password")
+        viewModel.submit()
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals("the second tap must not launch a second login", 1, repository.loginCalls)
+        assertTrue(viewModel.state.value.loggedIn)
+    }
+
     /** Typing again after a rejected attempt must clear the stale message. */
     @Test
     fun `editing a field clears the previous error`() = runTest(dispatcher) {

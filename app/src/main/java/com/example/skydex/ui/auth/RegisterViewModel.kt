@@ -1,7 +1,9 @@
 package com.example.skydex.ui.auth
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.skydex.data.repository.AuthGateway
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,9 +38,14 @@ class RegisterViewModel(private val auth: AuthGateway) : ViewModel() {
             return
         }
 
+        // Re-entrancy is a ViewModel invariant, so it is guarded here and not only by the screen
+        // disabling its button: two taps in the same frame would otherwise create two accounts.
+        if (current.submitting) return
+
         _state.update { it.copy(submitting = true, errorMessage = null) }
         viewModelScope.launch {
             val result = auth.register(current.name, current.email, current.password)
+            result.exceptionOrNull()?.let { Log.w(TAG, "registration failed for ${current.email}", it) }
             _state.update {
                 if (result.isSuccess) {
                     it.copy(submitting = false, registered = true)
@@ -70,5 +77,7 @@ class RegisterViewModel(private val auth: AuthGateway) : ViewModel() {
     companion object {
         /** Kept in step with `@field:Size(min = 8)` on the backend's `RegisterRequest`. */
         const val MIN_PASSWORD_LENGTH = 8
+
+        private const val TAG = "RegisterViewModel"
     }
 }

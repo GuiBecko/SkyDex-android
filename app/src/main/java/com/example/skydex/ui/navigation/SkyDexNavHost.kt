@@ -33,9 +33,22 @@ private val BAR_ROUTES = setOf(Routes.HOME, Routes.NEARBY, Routes.MY_CAPTURES)
  * `@Preview`s renderable — the preview renderer never runs `SkyDexApplication.onCreate`, so
  * anything reaching for the container from composition would blow up in the IDE.
  *
- * [session] is read once, to decide where to start. Everything after that is explicit navigation:
- * `NavHost` pins its graph on first composition, so a start destination that changed underneath it
- * would tear the back stack down and rebuild it mid-session.
+ * [session] is read **once**, to decide where to start, and every later value is ignored by
+ * design. `NavHost` pins its graph on first composition, so a start destination that changed
+ * underneath it would tear the back stack down and rebuild it — which is exactly what would happen
+ * on login, mid-login, if the `remember` were dropped.
+ *
+ * The consequence to know before you rely on it: **passing `null` here later does not return the
+ * user to the login screen.** They stay wherever they are, now without a token. Logout must be
+ * explicit navigation from whichever screen owns the button:
+ *
+ * ```
+ * navController.navigate(Routes.LOGIN) { popUpTo(0) { inclusive = true } }
+ * ```
+ *
+ * `popUpTo(0)` clears the entire back stack, so "back" from the login screen cannot walk into a
+ * signed-out Home. There is no logout affordance in the app yet; this is the contract for the task
+ * that adds one.
  */
 @Composable
 fun SkyDexNavHost(session: Session?, modifier: Modifier = Modifier) {
@@ -85,13 +98,15 @@ fun SkyDexNavHost(session: Session?, modifier: Modifier = Modifier) {
                 )
             }
 
-            // HOME and NEARBY render the same list for now; Task 10 gives HOME its own dashboard
-            // with the capture button and leaves NEARBY as the phenomena list.
             composable(Routes.HOME) {
                 val vm: HomeViewModel = viewModel { HomeViewModel(ServiceLocator.captureRepository) }
                 HomeScreen(viewModel = vm)
             }
 
+            // Registered but unreachable: HOME and NEARBY would render the same list, so
+            // AppBottomBar deliberately ships no NEARBY tab rather than two controls that produce
+            // an identical screen. Task 10 gives HOME its own dashboard with the capture button,
+            // leaves NEARBY as the phenomena list, and puts the tab back.
             composable(Routes.NEARBY) {
                 val vm: HomeViewModel = viewModel { HomeViewModel(ServiceLocator.captureRepository) }
                 HomeScreen(viewModel = vm)

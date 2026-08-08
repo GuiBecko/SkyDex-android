@@ -1,5 +1,6 @@
 package com.example.skydex.ui.captures
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.skydex.data.remote.dto.WeatherEventResponse
@@ -22,7 +23,16 @@ class MyCapturesViewModel(private val captures: CaptureRepository) : ViewModel()
         viewModelScope.launch {
             captures.myCaptures()
                 .onSuccess { _state.value = UiState.Success(it) }
-                .onFailure { _state.value = UiState.Error("Não foi possível carregar seus registros.") }
+                .onFailure {
+                    // The user-facing copy stays generic on purpose; the cause — offline, an
+                    // expired token, a parse failure — is only distinguishable in logcat.
+                    Log.w(TAG, "myCaptures failed", it)
+                    _state.value = UiState.Error("Não foi possível carregar seus registros.")
+                }
         }
+    }
+
+    private companion object {
+        const val TAG = "MyCapturesViewModel"
     }
 }

@@ -62,6 +62,9 @@ class CaptureRepositoryTest {
         api.createResponse = { capture }
 
         assertEquals(capture, repository.create(request).getOrNull())
+        // The point of the test: the body reaching the api is the one the caller handed over,
+        // field for field. Asserting only the return value would pass with the body dropped.
+        assertEquals(listOf(request), api.createdRequests)
     }
 
     /** The backend answers 204 with an empty body, which Retrofit hands over as a null payload. */

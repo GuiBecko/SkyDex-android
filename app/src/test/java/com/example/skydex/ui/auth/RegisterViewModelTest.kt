@@ -114,6 +114,25 @@ class RegisterViewModelTest {
         assertTrue(viewModel.state.value.registered)
     }
 
+    /**
+     * A double tap here would try to create the account twice — the second attempt coming back as
+     * "e-mail já existe?" against the account the first one just made. The button being disabled
+     * while `submitting` is a UI-level guard; the invariant belongs in the ViewModel.
+     */
+    @Test
+    fun `a second submit while one is in flight is ignored`() = runTest(dispatcher) {
+        val repository = FakeAuthRepository(result = Result.success(Unit))
+        val viewModel = RegisterViewModel(repository)
+
+        viewModel.fillIn()
+        viewModel.submit()
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals("the second tap must not create a second account", 1, repository.registerCalls)
+        assertTrue(viewModel.state.value.registered)
+    }
+
     @Test
     fun `the submitting flag is cleared once the call finishes`() = runTest(dispatcher) {
         val repository = FakeAuthRepository(result = Result.failure(IOException("boom")))

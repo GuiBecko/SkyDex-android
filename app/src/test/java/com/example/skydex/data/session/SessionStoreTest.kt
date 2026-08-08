@@ -5,14 +5,18 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.IOException
 
 /**
  * Session survival across process death is the entire point of Task 4, and with no device
@@ -93,6 +97,42 @@ class SessionStoreTest {
 
         SessionStore(dataStore).save(token = "jwt-abc", userId = "")
         assertNull(SessionStore(dataStore).session.first())
+    }
+
+    /**
+     * DataStore reports an unreadable file as an [IOException] emitted *into* the flow. The whole
+     * UI is gated on `session` now, so an uncaught one crashes the composition with no login
+     * screen left to fall back on. It must degrade to "no session" instead.
+     */
+    @Test
+    fun `an unreadable preferences file reads as no session instead of throwing`() = runBlocking {
+        val broken = object : DataStore<Preferences> {
+            override val data: Flow<Preferences> = flow { throw IOException("corrupt .preferences_pb") }
+            override suspend fun updateData(
+                transform: suspend (Preferences) -> Preferences
+            ): Preferences = throw UnsupportedOperationException()
+        }
+
+        assertNull(SessionStore(broken).session.first())
+        assertNull(SessionStore(broken).blockingToken())
+    }
+
+    /** Anything that is not an IO failure is a bug, and hiding it would only delay the diagnosis. */
+    @Test
+    fun `a non-IO failure is not swallowed`() {
+        val broken = object : DataStore<Preferences> {
+            override val data: Flow<Preferences> = flow { throw IllegalStateException("bug") }
+            override suspend fun updateData(
+                transform: suspend (Preferences) -> Preferences
+            ): Preferences = throw UnsupportedOperationException()
+        }
+
+        try {
+            runBlocking { SessionStore(broken).session.first() }
+            fail("the non-IO failure should have propagated")
+        } catch (expected: IllegalStateException) {
+            assertEquals("bug", expected.message)
+        }
     }
 
     /**
