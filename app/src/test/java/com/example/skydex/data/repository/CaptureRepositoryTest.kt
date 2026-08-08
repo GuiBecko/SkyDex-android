@@ -3,17 +3,23 @@ package com.example.skydex.data.repository
 import com.example.skydex.data.remote.FakeSkyDexApi
 import com.example.skydex.data.remote.dto.CreateWeatherEventRequest
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
+import com.example.skydex.data.remote.dto.PhotoUploadResponse
 import com.example.skydex.data.remote.dto.WeatherEventResponse
 import kotlinx.coroutines.runBlocking
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import retrofit2.HttpException
 import retrofit2.Response
 import java.io.IOException
 
 class CaptureRepositoryTest {
+
+    @get:Rule
+    val temporaryFolder = TemporaryFolder()
 
     private val api = FakeSkyDexApi()
     private val repository = CaptureRepository(api)
@@ -101,5 +107,29 @@ class CaptureRepositoryTest {
 
         assertTrue("a 403 must not read as a successful delete", result.isFailure)
         assertEquals(403, (result.exceptionOrNull() as HttpException).code())
+    }
+
+    /**
+     * The backend binds the upload with `@RequestParam("file")` and picks the stored extension
+     * from the part's content type, so both are part of the contract rather than cosmetic: a
+     * differently named part is a 400 and a missing content type is rejected as a non-image.
+     * Asserting only the returned URL would pass with either of them wrong.
+     */
+    @Test
+    fun `uploadPhoto sends the file as a jpeg part named file and returns the stored url`() = runBlocking {
+        val file = temporaryFolder.newFile("storm.jpg")
+        file.writeBytes(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xD9.toByte()))
+        api.uploadPhotoResponse = { PhotoUploadResponse("http://localhost:8080/api/photos/abc.jpg") }
+
+        val result = repository.uploadPhoto(file)
+
+        assertEquals("http://localhost:8080/api/photos/abc.jpg", result.getOrNull())
+        val part = api.uploadedParts.single()
+        assertEquals(
+            "form-data; name=\"file\"; filename=\"storm.jpg\"",
+            part.headers?.get("Content-Disposition")
+        )
+        assertEquals("image/jpeg", part.body.contentType().toString())
+        assertEquals(4L, part.body.contentLength())
     }
 }

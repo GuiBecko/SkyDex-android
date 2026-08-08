@@ -4,14 +4,18 @@ import com.example.skydex.data.remote.dto.CreateWeatherEventRequest
 import com.example.skydex.data.remote.dto.LoginRequest
 import com.example.skydex.data.remote.dto.LoginResponse
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
+import com.example.skydex.data.remote.dto.PhotoUploadResponse
 import com.example.skydex.data.remote.dto.RegisterRequest
 import com.example.skydex.data.remote.dto.UserResponse
 import com.example.skydex.data.remote.dto.WeatherEventResponse
+import okhttp3.MultipartBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Multipart
 import retrofit2.http.POST
+import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -39,6 +43,11 @@ interface SkyDexApi {
      */
     @DELETE("api/events/{id}")
     suspend fun deleteCapture(@Path("id") id: String): Response<Unit>
+
+    /** The backend expects the part to be named `file` and answers 201 with the public URL. */
+    @Multipart
+    @POST("api/photos")
+    suspend fun uploadPhoto(@Part file: MultipartBody.Part): PhotoUploadResponse
 
     @GET("api/weather/nearby")
     suspend fun nearbyPhenomena(

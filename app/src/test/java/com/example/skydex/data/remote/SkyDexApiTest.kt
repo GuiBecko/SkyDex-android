@@ -2,6 +2,9 @@ package com.example.skydex.data.remote
 
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -215,6 +218,30 @@ class SkyDexApiTest {
         )
         // Guards the premise: if logging were off entirely the assertion above would pass vacuously.
         assertTrue("expected BODY-level logging to have produced output", lines.isNotEmpty())
+    }
+
+    /**
+     * Retrofit only validates a method's annotations when that method is first called, so nothing
+     * else pins that `uploadPhoto` is a well-formed `@Multipart` POST: a mismatch between
+     * `@Multipart` and `@Part` throws at call time, not at interface-creation time.
+     */
+    @Test
+    fun `uploading a photo posts to the photos route and reads back the stored url`() {
+        val api = apiAnswering(
+            code = 201,
+            body = """{"photoUrl":"http://localhost:8080/api/photos/abc.jpg"}""",
+            token = "abc123"
+        )
+        val part = MultipartBody.Part.createFormData(
+            "file", "storm.jpg", "bytes".toRequestBody("image/jpeg".toMediaType())
+        )
+
+        val body = runBlocking { api.uploadPhoto(part) }
+
+        assertEquals("http://localhost:8080/api/photos/abc.jpg", body.photoUrl)
+        assertEquals("POST", received.single().method)
+        assertEquals("/api/photos", received.single().target)
+        assertEquals("Bearer abc123", received.single().authorization)
     }
 
     @Test

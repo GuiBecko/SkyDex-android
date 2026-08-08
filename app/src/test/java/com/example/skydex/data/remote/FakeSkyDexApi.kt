@@ -4,9 +4,11 @@ import com.example.skydex.data.remote.dto.CreateWeatherEventRequest
 import com.example.skydex.data.remote.dto.LoginRequest
 import com.example.skydex.data.remote.dto.LoginResponse
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
+import com.example.skydex.data.remote.dto.PhotoUploadResponse
 import com.example.skydex.data.remote.dto.RegisterRequest
 import com.example.skydex.data.remote.dto.UserResponse
 import com.example.skydex.data.remote.dto.WeatherEventResponse
+import okhttp3.MultipartBody
 import retrofit2.Response
 
 /**
@@ -25,6 +27,7 @@ class FakeSkyDexApi : SkyDexApi {
     var nearbyResponse: () -> List<NearbyPhenomenonResponse> = { unsupported("nearbyPhenomena") }
     var createResponse: (CreateWeatherEventRequest) -> WeatherEventResponse = { unsupported("createCapture") }
     var deleteResponse: () -> Response<Unit> = { unsupported("deleteCapture") }
+    var uploadPhotoResponse: () -> PhotoUploadResponse = { unsupported("uploadPhoto") }
 
     /** Coordinates of every `nearbyPhenomena` call, in order. */
     val nearbyCalls = mutableListOf<Pair<Double, Double>>()
@@ -34,6 +37,9 @@ class FakeSkyDexApi : SkyDexApi {
 
     /** Bodies passed to `createCapture`, in order. */
     val createdRequests = mutableListOf<CreateWeatherEventRequest>()
+
+    /** Parts passed to `uploadPhoto`, in order. */
+    val uploadedParts = mutableListOf<MultipartBody.Part>()
 
     override suspend fun login(request: LoginRequest): LoginResponse = unsupported("login")
 
@@ -51,6 +57,11 @@ class FakeSkyDexApi : SkyDexApi {
     override suspend fun deleteCapture(id: String): Response<Unit> {
         deletedIds += id
         return deleteResponse()
+    }
+
+    override suspend fun uploadPhoto(file: MultipartBody.Part): PhotoUploadResponse {
+        uploadedParts += file
+        return uploadPhotoResponse()
     }
 
     override suspend fun nearbyPhenomena(
