@@ -33,7 +33,12 @@ class CaptureRepositoryTest {
         latitude = -23.55,
         longitude = -46.63,
         userId = "u1",
-        authorName = "Pilot"
+        authorName = "Pilot",
+        phenomenon = "THUNDERSTORM",
+        phenomenonName = "Tempestade com Trovões",
+        rarity = "RARE",
+        validationStatus = "CONFIRMED",
+        xpAwarded = 60
     )
 
     @Test
@@ -75,7 +80,9 @@ class CaptureRepositoryTest {
             description = "Uma torre de nuvens",
             photoUrl = "https://example.test/cb.jpg",
             latitude = 0.0,
-            longitude = 0.0
+            longitude = 0.0,
+            phenomenon = "THUNDERSTORM",
+            locationIsMock = false
         )
         api.createResponse = { capture }
 

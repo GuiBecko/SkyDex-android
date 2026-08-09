@@ -7,4 +7,5 @@ object Routes {
     const val NEARBY = "nearby"
     const val MY_CAPTURES = "my_captures"
     const val CAPTURE = "capture"
+    const val SKYDEX = "skydex"
 }

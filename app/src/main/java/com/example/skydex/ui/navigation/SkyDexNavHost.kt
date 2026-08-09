@@ -25,8 +25,10 @@ import com.example.skydex.ui.captures.MyCapturesViewModel
 import com.example.skydex.ui.components.AppBottomBar
 import com.example.skydex.ui.home.HomeScreen
 import com.example.skydex.ui.home.HomeViewModel
+import com.example.skydex.ui.skydex.SkyDexScreen
+import com.example.skydex.ui.skydex.SkyDexViewModel
 
-private val BAR_ROUTES = setOf(Routes.HOME, Routes.NEARBY, Routes.MY_CAPTURES)
+private val BAR_ROUTES = setOf(Routes.HOME, Routes.NEARBY, Routes.MY_CAPTURES, Routes.SKYDEX)
 
 /**
  * The one place in the UI that is allowed to know about [ServiceLocator]: it builds each
@@ -150,6 +152,11 @@ fun SkyDexNavHost(session: Session?, modifier: Modifier = Modifier) {
             composable(Routes.MY_CAPTURES) {
                 val vm: MyCapturesViewModel = viewModel { MyCapturesViewModel(ServiceLocator.captureRepository) }
                 MyCapturesScreen(viewModel = vm)
+            }
+
+            composable(Routes.SKYDEX) {
+                val vm: SkyDexViewModel = viewModel { SkyDexViewModel(ServiceLocator.skyDexRepository) }
+                SkyDexScreen(viewModel = vm)
             }
         }
     }

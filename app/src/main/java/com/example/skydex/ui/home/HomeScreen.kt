@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
 import com.example.skydex.ui.common.UiState
+import com.example.skydex.ui.skydex.rarityColor
 import com.example.skydex.util.Coordinates
 import com.example.skydex.util.LOCATION_PERMISSIONS
 
@@ -227,15 +228,6 @@ private fun MainActionCard(onClick: () -> Unit) {
             )
         }
     }
-}
-
-/** Colors the rarity chip on `PhenomenonCard`. Cheapest tier falls through to a neutral gray. */
-private fun rarityColor(rarity: String): Color = when (rarity) {
-    "LEGENDARY" -> Color(0xFFF59E0B)
-    "EPIC" -> Color(0xFF8B5CF6)
-    "RARE" -> Color(0xFF3B82F6)
-    "UNCOMMON" -> Color(0xFF10B981)
-    else -> Color(0xFF6B7280)
 }
 
 @Composable

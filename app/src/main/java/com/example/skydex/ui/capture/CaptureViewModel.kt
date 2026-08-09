@@ -27,6 +27,7 @@ data class CaptureUiState(
     val uploadedPhotoUrl: String? = null,
     val coordinates: Coordinates? = null,
     val locating: Boolean = false,
+    val phenomenon: String? = null,
     val submitting: Boolean = false,
     val saved: Boolean = false,
     val errorMessage: String? = null
@@ -49,6 +50,9 @@ class CaptureViewModel(
 
     fun onPhotoTaken(file: File) =
         _state.update { it.copy(photoFile = file, uploadedPhotoUrl = null, errorMessage = null) }
+
+    fun onPhenomenonSelected(name: String) =
+        _state.update { it.copy(phenomenon = name, errorMessage = null) }
 
     /**
      * Claims the one screen-driven initial location request, returning `true` exactly once per
@@ -87,6 +91,8 @@ class CaptureViewModel(
                 "Tire uma foto do fenômeno antes de salvar."
             current.coordinates == null ->
                 "Não foi possível obter sua localização. Ative o GPS e tente de novo."
+            current.phenomenon == null ->
+                "Escolha qual fenômeno você registrou."
             else -> null
         }
         if (error != null) {
@@ -144,7 +150,9 @@ class CaptureViewModel(
                 description = current.description,
                 photoUrl = photoUrl,
                 latitude = coordinates.latitude,
-                longitude = coordinates.longitude
+                longitude = coordinates.longitude,
+                phenomenon = current.phenomenon!!,
+                locationIsMock = coordinates.isMock
             )
 
             captures.create(request)

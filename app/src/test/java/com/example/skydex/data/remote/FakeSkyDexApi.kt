@@ -6,6 +6,7 @@ import com.example.skydex.data.remote.dto.LoginResponse
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
 import com.example.skydex.data.remote.dto.PhotoUploadResponse
 import com.example.skydex.data.remote.dto.RegisterRequest
+import com.example.skydex.data.remote.dto.SkyDexResponse
 import com.example.skydex.data.remote.dto.UserResponse
 import com.example.skydex.data.remote.dto.WeatherEventResponse
 import okhttp3.MultipartBody
@@ -28,6 +29,7 @@ class FakeSkyDexApi : SkyDexApi {
     var createResponse: (CreateWeatherEventRequest) -> WeatherEventResponse = { unsupported("createCapture") }
     var deleteResponse: () -> Response<Unit> = { unsupported("deleteCapture") }
     var uploadPhotoResponse: () -> PhotoUploadResponse = { unsupported("uploadPhoto") }
+    var skyDexResponse: () -> SkyDexResponse = { unsupported("skyDex") }
 
     /** Coordinates of every `nearbyPhenomena` call, in order. */
     val nearbyCalls = mutableListOf<Pair<Double, Double>>()
@@ -71,6 +73,8 @@ class FakeSkyDexApi : SkyDexApi {
         nearbyCalls += latitude to longitude
         return nearbyResponse()
     }
+
+    override suspend fun skyDex(): SkyDexResponse = skyDexResponse()
 }
 
 private fun unsupported(endpoint: String): Nothing =

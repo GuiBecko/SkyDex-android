@@ -8,9 +8,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -19,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -42,6 +45,24 @@ import coil.compose.AsyncImage
 import com.example.skydex.util.LOCATION_PERMISSIONS
 import com.example.skydex.util.PhotoCaptureFiles
 import java.io.File
+
+/**
+ * Hardcoded because the species catalog is a backend enum with no discovery endpoint in the MVP.
+ * The names must match `Phenomenon` exactly — a drift here fails a capture with "Unknown
+ * phenomenon". Exposing `GET /api/phenomena` and driving the chips from it is a small post-MVP
+ * follow-up worth doing.
+ */
+private val SPECIES = listOf(
+    "CLEAR_SKY" to "Céu Limpo",
+    "CLOUDS" to "Nublado",
+    "FOG" to "Nevoeiro Intenso",
+    "DRIZZLE" to "Garoa",
+    "RAIN" to "Chuva",
+    "RAIN_SHOWER" to "Pancada de Chuva",
+    "SNOW" to "Neve",
+    "THUNDERSTORM" to "Tempestade com Trovões",
+    "HAILSTORM" to "Tempestade Severa com Granizo"
+)
 
 @Composable
 fun CaptureScreen(
@@ -155,6 +176,20 @@ fun CaptureScreen(
                 if (state.photoFile == null) "  Tirar Foto" else "  Tirar Outra Foto",
                 fontWeight = FontWeight.Bold
             )
+        }
+
+        Text("Qual fenômeno?", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            SPECIES.forEach { (name, label) ->
+                FilterChip(
+                    selected = state.phenomenon == name,
+                    onClick = { viewModel.onPhenomenonSelected(name) },
+                    label = { Text(label) }
+                )
+            }
         }
 
         OutlinedTextField(

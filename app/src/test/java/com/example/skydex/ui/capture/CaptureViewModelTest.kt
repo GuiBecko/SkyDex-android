@@ -47,6 +47,7 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios sobre o bairro")
+        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(jpeg())
         viewModel.submit()
         advanceUntilIdle()
@@ -159,6 +160,7 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(jpeg())
         viewModel.submit()
         advanceUntilIdle()
@@ -183,6 +185,7 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(jpeg())
 
         // No advanceUntilIdle between them: this is the double tap, not two deliberate saves.
@@ -210,6 +213,7 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(jpeg())
         viewModel.submit()
         advanceUntilIdle()
@@ -235,6 +239,7 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(jpeg())
 
         viewModel.submit()
@@ -260,6 +265,7 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(jpeg())
         viewModel.submit()
         advanceUntilIdle()
@@ -290,6 +296,7 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(first)
         viewModel.submit()
         advanceUntilIdle()
@@ -322,6 +329,7 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(first)
         viewModel.submit()
         advanceUntilIdle() // the upload is now parked inside the gateway
@@ -351,6 +359,7 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(first)
         viewModel.submit()
         advanceUntilIdle()
@@ -404,6 +413,64 @@ class CaptureViewModelTest {
 
         assertEquals(2, fixes)
     }
+
+    @Test
+    fun `refuses to submit without choosing a phenomenon`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway()
+        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0346, -51.2177) }
+
+        viewModel.refreshLocation()
+        advanceUntilIdle()
+        viewModel.onTitleChanged("Tempestade")
+        viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhotoTaken(jpeg())
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals("Escolha qual fenômeno você registrou.", viewModel.state.value.errorMessage)
+        assertEquals(0, gateway.createdRequests.size)
+    }
+
+    @Test
+    fun `sends the chosen phenomenon with the capture`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway()
+        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0346, -51.2177) }
+
+        viewModel.refreshLocation()
+        advanceUntilIdle()
+        viewModel.onTitleChanged("Tempestade")
+        viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhenomenonSelected("THUNDERSTORM")
+        viewModel.onPhotoTaken(jpeg())
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals("THUNDERSTORM", gateway.createdRequests.single().phenomenon)
+    }
+
+    /**
+     * The load-bearing test for `locationIsMock`: the server defaults that field to `false`, so a
+     * client that hardcodes `false` at the call site compiles and passes every other test here
+     * while silently disabling the anti-cheat check for every real user. Only a fixture whose
+     * position is actually flagged as mocked, asserted against the request that reaches the
+     * gateway, can catch that — see task-14-report.md for the mutation probe that confirms it does.
+     */
+    @Test
+    fun `a mocked position is flagged on the created request`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway()
+        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0346, -51.2177, isMock = true) }
+
+        viewModel.refreshLocation()
+        advanceUntilIdle()
+        viewModel.onTitleChanged("Tempestade")
+        viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhenomenonSelected("THUNDERSTORM")
+        viewModel.onPhotoTaken(jpeg())
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertTrue(gateway.createdRequests.single().locationIsMock)
+    }
 }
 
 class FakeCaptureGateway(
@@ -438,7 +505,12 @@ class FakeCaptureGateway(
                 latitude = request.latitude,
                 longitude = request.longitude,
                 userId = "00000000-0000-0000-0000-000000000002",
-                authorName = "Test Pilot"
+                authorName = "Test Pilot",
+                phenomenon = request.phenomenon,
+                phenomenonName = "Tempestade com Trovões",
+                rarity = "RARE",
+                validationStatus = "CONFIRMED",
+                xpAwarded = 60
             )
         )
     }

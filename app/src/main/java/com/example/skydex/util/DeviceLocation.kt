@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.LocationServices
@@ -11,7 +12,7 @@ import com.google.android.gms.location.Priority
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
-data class Coordinates(val latitude: Double, val longitude: Double)
+data class Coordinates(val latitude: Double, val longitude: Double, val isMock: Boolean = false)
 
 /** A fix at exactly (0, 0) is what the fused provider reports when it has nothing real. */
 fun Coordinates.isPlausible(): Boolean =
@@ -48,7 +49,15 @@ class DeviceLocation(private val context: Context) {
         return suspendCancellableCoroutine { continuation ->
             client.getCurrentLocation(request, null)
                 .addOnSuccessListener { location ->
-                    val coordinates = location?.let { Coordinates(it.latitude, it.longitude) }
+                    val coordinates = location?.let {
+                        val isMock = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            it.isMock                 // API 31+
+                        } else {
+                            @Suppress("DEPRECATION")
+                            it.isFromMockProvider     // API 18-30; minSdk here is 26
+                        }
+                        Coordinates(it.latitude, it.longitude, isMock)
+                    }
                     continuation.resume(coordinates?.takeIf { it.isPlausible() })
                 }
                 .addOnFailureListener { continuation.resume(null) }

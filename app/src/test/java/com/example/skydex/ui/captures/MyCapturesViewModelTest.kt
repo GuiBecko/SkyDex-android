@@ -35,7 +35,12 @@ class MyCapturesViewModelTest {
         latitude = -23.55,
         longitude = -46.63,
         userId = "u1",
-        authorName = "Pilot"
+        authorName = "Pilot",
+        phenomenon = "THUNDERSTORM",
+        phenomenonName = "Tempestade com Trovões",
+        rarity = "RARE",
+        validationStatus = "CONFIRMED",
+        xpAwarded = 60
     )
 
     @Before fun setUp() = Dispatchers.setMain(dispatcher)

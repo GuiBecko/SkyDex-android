@@ -6,6 +6,7 @@ import com.example.skydex.data.remote.dto.LoginResponse
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
 import com.example.skydex.data.remote.dto.PhotoUploadResponse
 import com.example.skydex.data.remote.dto.RegisterRequest
+import com.example.skydex.data.remote.dto.SkyDexResponse
 import com.example.skydex.data.remote.dto.UserResponse
 import com.example.skydex.data.remote.dto.WeatherEventResponse
 import okhttp3.MultipartBody
@@ -54,4 +55,7 @@ interface SkyDexApi {
         @Query("lat") latitude: Double,
         @Query("lon") longitude: Double
     ): List<NearbyPhenomenonResponse>
+
+    @GET("api/skydex")
+    suspend fun skyDex(): SkyDexResponse
 }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CatchingPokemon
 import androidx.compose.material.icons.filled.Dataset
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.Icon
@@ -33,6 +34,7 @@ fun AppBottomBar(currentRoute: String, onNavigate: (String) -> Unit) {
     // The route stays registered in the graph so Task 10 only has to add the BarItem back.
     val items = listOf(
         BarItem(Routes.HOME, Icons.Default.Home, "Início"),
+        BarItem(Routes.SKYDEX, Icons.Default.CatchingPokemon, "SkyDex"),
         BarItem(Routes.MY_CAPTURES, Icons.Default.Dataset, "Meus Registros")
     )
 
