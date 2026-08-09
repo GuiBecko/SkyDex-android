@@ -4,6 +4,7 @@ import com.example.skydex.data.remote.dto.BadgeResponse
 import com.example.skydex.data.remote.dto.ProfileResponse
 import com.example.skydex.data.remote.dto.UserSummary
 import com.example.skydex.ui.common.UiState
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -77,6 +78,42 @@ class ProfileViewModelTest {
         advanceUntilIdle()
 
         assertTrue(loggedOut)
+    }
+
+    @Test
+    fun `does not signal completion until the pending session write finishes`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val viewModel = ProfileViewModel(FakeProfileGateway(Result.success(sample))) { gate.await() }
+        advanceUntilIdle()
+
+        viewModel.logout()
+        advanceUntilIdle()
+
+        // The write is still pending: the screen must not have been told to navigate yet,
+        // because navigating now would tear down the ViewModelStore hosting this very
+        // coroutine and could cancel the write mid-flight, leaving a stale session on disk.
+        assertEquals(false, viewModel.loggedOut.value)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(true, viewModel.loggedOut.value)
+    }
+
+    @Test
+    fun `a failed session write surfaces an error instead of crashing`() = runTest(dispatcher) {
+        val viewModel = ProfileViewModel(FakeProfileGateway(Result.success(sample))) {
+            throw IOException("disk full")
+        }
+        advanceUntilIdle()
+
+        viewModel.logout()
+        advanceUntilIdle()
+
+        assertEquals(false, viewModel.loggedOut.value)
+        val state = viewModel.state.value
+        assertTrue(state is UiState.Error)
+        assertEquals("Não foi possível sair da conta. Tente novamente.", (state as UiState.Error).message)
     }
 }
 

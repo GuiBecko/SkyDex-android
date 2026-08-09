@@ -29,6 +29,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -53,6 +54,15 @@ fun ProfileScreen(
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.state.collectAsState()
+    val loggedOut by viewModel.loggedOut.collectAsState()
+
+    // Navigation waits for the ViewModel to confirm the session write actually finished —
+    // firing it straight from the button's click handler would race the pending disk write
+    // against the ViewModelStore teardown that popping the back stack triggers. See
+    // ProfileViewModel.loggedOut for the full reasoning.
+    LaunchedEffect(loggedOut) {
+        if (loggedOut) onLoggedOut()
+    }
 
     Box(modifier = modifier.fillMaxSize().background(Color(0xFFF3F4F6)).padding(16.dp)) {
         when (val current = state) {
@@ -74,10 +84,7 @@ fun ProfileScreen(
                 profile = current.data,
                 onOpenMyCaptures = onOpenMyCaptures,
                 onOpenFriends = onOpenFriends,
-                onLogout = {
-                    viewModel.logout()
-                    onLoggedOut()
-                }
+                onLogout = viewModel::logout
             )
         }
     }
