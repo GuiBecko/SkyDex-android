@@ -10,7 +10,10 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.setMain
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -21,6 +24,8 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import retrofit2.HttpException
+import retrofit2.Response
 import java.io.File
 import java.io.IOException
 
@@ -255,6 +260,118 @@ class CaptureViewModelTest {
         assertEquals("/api/photos/uploaded.jpg", gateway.createdRequests.last().photoUrl)
     }
 
+    /**
+     * The backend designed five distinct, actionable 400 messages across Tasks 12b and 12c —
+     * "This photo has already been used for a capture", "Photo has expired; take a new one", and
+     * so on — and the client threw all of them away in favour of one blanket string. Worse, that
+     * string told the user to retry, which for most of those five is the one thing that cannot
+     * work.
+     */
+    @Test
+    fun `a 400 surfaces the backend's own message instead of the generic one`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway(
+            createFailure = httpError(400, """{"error":"Photo has expired; take a new one"}""")
+        )
+        val viewModel = readyToSubmit(gateway)
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals("Photo has expired; take a new one", viewModel.state.value.errorMessage)
+    }
+
+    /**
+     * The trap three locally-correct decisions composed into.
+     *
+     * Task 10 built this retry cache so a retry reuses the JPEG already uploaded. Task 12b then
+     * made photos single-use — `consume` stamps `consumed_at` in the same transaction as the
+     * insert. Nobody revisited the cache. So whenever the server commits but the client sees a
+     * failure, the cached path names a spent photo and every retry is refused with
+     * "This photo has already been used for a capture", forever. The same applies once the photo
+     * passes the 30-minute MAX_AGE.
+     *
+     * A 400 is the signal that this photo will never be accepted again, so the cache must be
+     * dropped and the next attempt must upload afresh. That costs one orphaned JPEG — the
+     * server-side sweep's problem — instead of a capture the user can never complete.
+     */
+    @Test
+    fun `a 400 clears the cached photo so the next attempt uploads a new one`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway(
+            createFailure = httpError(400, """{"error":"This photo has already been used for a capture"}""")
+        )
+        val viewModel = readyToSubmit(gateway)
+
+        viewModel.submit()
+        advanceUntilIdle()
+        assertNull(
+            "a photo the server has rejected must not stay cached",
+            viewModel.state.value.uploadedPhotoUrl
+        )
+
+        gateway.createFailure = null
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(2, gateway.uploadedFiles.size)
+        assertTrue(viewModel.state.value.saved)
+    }
+
+    /**
+     * The error body is attacker-adjacent input as far as this code is concerned: it can be absent,
+     * truncated, HTML from a proxy, or JSON of the wrong shape. None of those may crash the app,
+     * and none may leave the user with no message at all.
+     */
+    @Test
+    fun `a 400 whose body is not the error envelope falls back to the generic message`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway(
+            createFailure = httpError(400, "<html><body>502 Bad Gateway</body></html>")
+        )
+        val viewModel = readyToSubmit(gateway)
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(
+            "Falha ao salvar o registro. Tente de novo.",
+            viewModel.state.value.errorMessage
+        )
+    }
+
+    /** An empty error body is the other shape of the same hazard. */
+    @Test
+    fun `a 400 with an empty body falls back to the generic message`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway(createFailure = httpError(400, ""))
+        val viewModel = readyToSubmit(gateway)
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(
+            "Falha ao salvar o registro. Tente de novo.",
+            viewModel.state.value.errorMessage
+        )
+    }
+
+    /**
+     * The other side of the cache rule. A dropped connection says nothing about whether the photo
+     * is still usable — most likely the request never arrived — so the cache must survive, exactly
+     * as Task 10 intended. Only an explicit 400 clears it.
+     */
+    @Test
+    fun `a network failure keeps the cached photo and the generic message`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway(createFailure = IOException("offline"))
+        val viewModel = readyToSubmit(gateway)
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(
+            "Falha ao salvar o registro. Tente de novo.",
+            viewModel.state.value.errorMessage
+        )
+        assertEquals("/api/photos/uploaded.jpg", viewModel.state.value.uploadedPhotoUrl)
+    }
+
     /** The retry succeeds on the second attempt without a second upload. */
     @Test
     fun `a successful retry saves the capture with the cached photo`() = runTest(dispatcher) {
@@ -471,6 +588,24 @@ class CaptureViewModelTest {
 
         assertTrue(gateway.createdRequests.single().locationIsMock)
     }
+
+    /** A ready-to-submit ViewModel: located, titled, described, phenomenon chosen, photo taken. */
+    private fun TestScope.readyToSubmit(gateway: CaptureGateway): CaptureViewModel {
+        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0346, -51.2177) }
+        viewModel.refreshLocation()
+        advanceUntilIdle()
+        viewModel.onTitleChanged("Tempestade")
+        viewModel.onDescriptionChanged("Raios")
+        viewModel.onPhenomenonSelected("THUNDERSTORM")
+        viewModel.onPhotoTaken(jpeg())
+        return viewModel
+    }
+
+    /** An [HttpException] shaped like a real one, carrying [body] as the error payload. */
+    private fun httpError(code: Int, body: String): HttpException = HttpException(
+        Response.error<Any>(code, body.toResponseBody("application/json".toMediaType()))
+    )
+
 }
 
 class FakeCaptureGateway(
