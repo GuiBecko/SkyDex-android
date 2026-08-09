@@ -10,4 +10,5 @@ object Routes {
     const val SKYDEX = "skydex"
     const val FEED = "feed"
     const val FRIENDS = "friends"
+    const val PROFILE = "profile"
 }

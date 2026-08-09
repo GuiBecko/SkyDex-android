@@ -8,6 +8,7 @@ import com.example.skydex.data.remote.dto.LoginRequest
 import com.example.skydex.data.remote.dto.LoginResponse
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
 import com.example.skydex.data.remote.dto.PhotoUploadResponse
+import com.example.skydex.data.remote.dto.ProfileResponse
 import com.example.skydex.data.remote.dto.RegisterRequest
 import com.example.skydex.data.remote.dto.SkyDexResponse
 import com.example.skydex.data.remote.dto.UserResponse
@@ -79,4 +80,7 @@ interface SkyDexApi {
 
     @GET("api/feed")
     suspend fun feed(@Query("page") page: Int, @Query("size") size: Int): List<WeatherEventResponse>
+
+    @GET("api/users/me/profile")
+    suspend fun profile(): ProfileResponse
 }

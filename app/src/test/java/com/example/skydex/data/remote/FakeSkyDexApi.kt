@@ -8,6 +8,7 @@ import com.example.skydex.data.remote.dto.LoginRequest
 import com.example.skydex.data.remote.dto.LoginResponse
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
 import com.example.skydex.data.remote.dto.PhotoUploadResponse
+import com.example.skydex.data.remote.dto.ProfileResponse
 import com.example.skydex.data.remote.dto.RegisterRequest
 import com.example.skydex.data.remote.dto.SkyDexResponse
 import com.example.skydex.data.remote.dto.UserResponse
@@ -39,6 +40,7 @@ class FakeSkyDexApi : SkyDexApi {
     var declineFriendRequestResponse: (String) -> Unit = { unsupported("declineFriendRequest") }
     var friendsResponse: () -> List<FriendResponse> = { unsupported("friends") }
     var feedResponse: (Int, Int) -> List<WeatherEventResponse> = { _, _ -> unsupported("feed") }
+    var profileResponse: () -> ProfileResponse = { unsupported("profile") }
 
     /** Coordinates of every `nearbyPhenomena` call, in order. */
     val nearbyCalls = mutableListOf<Pair<Double, Double>>()
@@ -97,6 +99,8 @@ class FakeSkyDexApi : SkyDexApi {
     override suspend fun friends(): List<FriendResponse> = friendsResponse()
 
     override suspend fun feed(page: Int, size: Int): List<WeatherEventResponse> = feedResponse(page, size)
+
+    override suspend fun profile(): ProfileResponse = profileResponse()
 }
 
 private fun unsupported(endpoint: String): Nothing =

@@ -29,6 +29,8 @@ import com.example.skydex.ui.friends.FriendsScreen
 import com.example.skydex.ui.friends.FriendsViewModel
 import com.example.skydex.ui.home.HomeScreen
 import com.example.skydex.ui.home.HomeViewModel
+import com.example.skydex.ui.profile.ProfileScreen
+import com.example.skydex.ui.profile.ProfileViewModel
 import com.example.skydex.ui.skydex.SkyDexScreen
 import com.example.skydex.ui.skydex.SkyDexViewModel
 
@@ -38,7 +40,8 @@ private val BAR_ROUTES = setOf(
     Routes.MY_CAPTURES,
     Routes.SKYDEX,
     Routes.FEED,
-    Routes.FRIENDS
+    Routes.FRIENDS,
+    Routes.PROFILE
 )
 
 /**
@@ -62,8 +65,8 @@ private val BAR_ROUTES = setOf(
  * ```
  *
  * `popUpTo(0)` clears the entire back stack, so "back" from the login screen cannot walk into a
- * signed-out Home. There is no logout affordance in the app yet; this is the contract for the task
- * that adds one.
+ * signed-out Home. The Profile screen owns the logout affordance and navigates through exactly this
+ * contract on [Routes.PROFILE].
  */
 @Composable
 fun SkyDexNavHost(session: Session?, modifier: Modifier = Modifier) {
@@ -176,6 +179,25 @@ fun SkyDexNavHost(session: Session?, modifier: Modifier = Modifier) {
             composable(Routes.FRIENDS) {
                 val vm: FriendsViewModel = viewModel { FriendsViewModel(ServiceLocator.socialRepository) }
                 FriendsScreen(viewModel = vm)
+            }
+
+            composable(Routes.PROFILE) {
+                val vm: ProfileViewModel = viewModel {
+                    ProfileViewModel(
+                        gateway = ServiceLocator.profileRepository,
+                        onLogout = { ServiceLocator.authRepository.logout() }
+                    )
+                }
+                ProfileScreen(
+                    viewModel = vm,
+                    onOpenMyCaptures = { navController.navigate(Routes.MY_CAPTURES) },
+                    onOpenFriends = { navController.navigate(Routes.FRIENDS) },
+                    onLoggedOut = {
+                        navController.navigate(Routes.LOGIN) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    }
+                )
             }
         }
     }

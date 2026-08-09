@@ -6,6 +6,7 @@ import com.example.skydex.data.remote.AuthInterceptor
 import com.example.skydex.data.remote.SkyDexApi
 import com.example.skydex.data.repository.AuthRepository
 import com.example.skydex.data.repository.CaptureRepository
+import com.example.skydex.data.repository.ProfileRepository
 import com.example.skydex.data.repository.SkyDexRepository
 import com.example.skydex.data.repository.SocialRepository
 import com.example.skydex.data.session.SessionStore
@@ -49,6 +50,8 @@ object ServiceLocator {
     val skyDexRepository: SkyDexRepository by lazy { SkyDexRepository(api) }
 
     val socialRepository: SocialRepository by lazy { SocialRepository(api) }
+
+    val profileRepository: ProfileRepository by lazy { ProfileRepository(api) }
 
     val deviceLocation: DeviceLocation by lazy { DeviceLocation(requireContext()) }
 }

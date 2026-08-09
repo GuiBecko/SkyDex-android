@@ -13,7 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CatchingPokemon
 import androidx.compose.material.icons.filled.DynamicFeed
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,7 +36,7 @@ fun AppBottomBar(currentRoute: String, onNavigate: (String) -> Unit) {
         BarItem(Routes.FEED, Icons.Default.DynamicFeed, "Feed"),
         BarItem(Routes.HOME, Icons.Default.Home, "Início"),
         BarItem(Routes.SKYDEX, Icons.Default.CatchingPokemon, "SkyDex"),
-        BarItem(Routes.FRIENDS, Icons.Default.People, "Amigos")
+        BarItem(Routes.PROFILE, Icons.Default.Person, "Perfil")
     )
 
     Row(
