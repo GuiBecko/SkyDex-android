@@ -72,8 +72,19 @@ interface SkyDexApi {
     @POST("api/friends/requests/{id}/accept")
     suspend fun acceptFriendRequest(@Path("id") id: String): FriendResponse
 
+    /**
+     * The backend answers 204 No Content, so this returns the raw [Response] for exactly the same
+     * reason [deleteCapture] does — see its comment above.
+     *
+     * It is worth stating why this bit twice. Retrofit 2.9.0 builds every suspending body call with
+     * `isNullable = false` (the nullability TODO in `HttpServiceMethod` was never implemented), and
+     * short-circuits 204/205 to a null body before any converter runs. So a `Unit` return type here
+     * did not mean "ignore the body" — it threw KotlinNullPointerException on the **success** path,
+     * every single time, and the caller reported the decline as failed while the server had
+     * already deleted the row.
+     */
     @DELETE("api/friends/requests/{id}")
-    suspend fun declineFriendRequest(@Path("id") id: String)
+    suspend fun declineFriendRequest(@Path("id") id: String): Response<Unit>
 
     @GET("api/friends")
     suspend fun friends(): List<FriendResponse>

@@ -21,8 +21,8 @@ import retrofit2.Response
  *
  * Faking at the API boundary rather than at the repository keeps the *real*
  * [com.example.skydex.data.repository.CaptureRepository] inside the test, so its error mapping —
- * notably turning an unsuccessful `Response<Unit>` from `deleteCapture` into a failure — is
- * exercised for real instead of being stubbed away.
+ * notably turning an unsuccessful `Response<Unit>` from `deleteCapture` and
+ * `declineFriendRequest` into a failure — is exercised for real instead of being stubbed away.
  *
  * Endpoints a test has not stubbed throw, so an unexpected call is loud rather than silent.
  */
@@ -37,7 +37,7 @@ class FakeSkyDexApi : SkyDexApi {
     var sendFriendRequestResponse: (FriendRequestBody) -> FriendRequestResponse = { unsupported("sendFriendRequest") }
     var incomingFriendRequestsResponse: () -> List<FriendRequestResponse> = { unsupported("incomingFriendRequests") }
     var acceptFriendRequestResponse: (String) -> FriendResponse = { unsupported("acceptFriendRequest") }
-    var declineFriendRequestResponse: (String) -> Unit = { unsupported("declineFriendRequest") }
+    var declineFriendRequestResponse: (String) -> Response<Unit> = { unsupported("declineFriendRequest") }
     var friendsResponse: () -> List<FriendResponse> = { unsupported("friends") }
     var feedResponse: (Int, Int) -> List<WeatherEventResponse> = { _, _ -> unsupported("feed") }
     var profileResponse: () -> ProfileResponse = { unsupported("profile") }
@@ -47,6 +47,9 @@ class FakeSkyDexApi : SkyDexApi {
 
     /** Ids passed to `deleteCapture`, in order. */
     val deletedIds = mutableListOf<String>()
+
+    /** Ids passed to `declineFriendRequest`, in order. */
+    val declinedIds = mutableListOf<String>()
 
     /** Bodies passed to `createCapture`, in order. */
     val createdRequests = mutableListOf<CreateWeatherEventRequest>()
@@ -94,7 +97,10 @@ class FakeSkyDexApi : SkyDexApi {
 
     override suspend fun acceptFriendRequest(id: String): FriendResponse = acceptFriendRequestResponse(id)
 
-    override suspend fun declineFriendRequest(id: String) = declineFriendRequestResponse(id)
+    override suspend fun declineFriendRequest(id: String): Response<Unit> {
+        declinedIds += id
+        return declineFriendRequestResponse(id)
+    }
 
     override suspend fun friends(): List<FriendResponse> = friendsResponse()
 

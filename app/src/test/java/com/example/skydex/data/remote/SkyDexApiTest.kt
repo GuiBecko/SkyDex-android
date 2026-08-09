@@ -153,6 +153,32 @@ class SkyDexApiTest {
         assertNull(response.body())
     }
 
+    /**
+     * The second endpoint that answers 204, and the one where the empty-body trap actually shipped.
+     *
+     * `declineFriendRequest` was declared as returning `Unit`, which reads like "there is no body
+     * to parse" but does not behave like it: Retrofit 2.9.0 short-circuits a 204 to a null body and
+     * then rejects that null against a non-null return type. The call therefore threw
+     * KotlinNullPointerException on the **success** path — the request really had been deleted —
+     * and the UI told the user it had failed.
+     */
+    @Test
+    fun `declining a friend request succeeds on the backend's empty 204 response`() {
+        val api = apiAnswering(code = 204, body = "", token = "abc123")
+
+        val response = runBlocking {
+            api.declineFriendRequest("11111111-2222-3333-4444-555555555555")
+        }
+
+        assertTrue(response.isSuccessful)
+        assertEquals(204, response.code())
+        assertEquals("DELETE", received.single().method)
+        assertEquals(
+            "/api/friends/requests/11111111-2222-3333-4444-555555555555",
+            received.single().target
+        )
+    }
+
     @Test
     fun `authenticated calls carry the bearer token all the way to the wire`() {
         val api = apiAnswering(code = 200, body = "[]", token = "abc123")

@@ -14,6 +14,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import java.io.IOException
@@ -81,6 +82,63 @@ class FriendsViewModelTest {
 
         assertEquals("ghost@skydex.com", viewModel.state.value.email)
         assertEquals("Não foi possível enviar o convite.", viewModel.state.value.message)
+    }
+
+    @Test
+    fun `declining a request reloads the lists`() = runTest(dispatcher) {
+        val gateway = FakeSocialGateway(
+            requests = listOf(
+                FriendRequestResponse("r1", "u2", "Bob", "bob@skydex.com", "2026-08-02T10:00:00Z")
+            )
+        )
+        val viewModel = FriendsViewModel(gateway)
+        advanceUntilIdle()
+
+        gateway.requests = emptyList()
+        viewModel.decline("r1")
+        advanceUntilIdle()
+
+        assertEquals(listOf("r1"), gateway.declined)
+        assertEquals(0, viewModel.state.value.requests.size)
+        assertNull(viewModel.state.value.message)
+    }
+
+    /**
+     * A failed decline must still reload, and this is not a stylistic preference — it is what
+     * stops the screen lying about what the server did.
+     *
+     * The failure this covers is a real one that shipped: `declineFriendRequest` was declared to
+     * return `Unit`, and Retrofit 2.9.0 cannot map the backend's empty 204 onto a non-null type, so
+     * every *successful* decline arrived here as `Result.failure`. Refreshing only on success meant
+     * the request the user had just deleted stayed on screen under an error message, and tapping
+     * again deleted nothing because it was already gone.
+     *
+     * The wire-level cause is fixed, but the ViewModel should not depend on the network layer being
+     * perfect to show the truth: refreshing on both branches means the list always reflects the
+     * server, whatever the client concluded about the call. The message still reports the failure.
+     */
+    @Test
+    fun `a failed decline still reloads the lists so the screen matches the server`() = runTest(dispatcher) {
+        val gateway = FakeSocialGateway(
+            requests = listOf(
+                FriendRequestResponse("r1", "u2", "Bob", "bob@skydex.com", "2026-08-02T10:00:00Z")
+            )
+        )
+        gateway.declineResult = Result.failure(IOException("nope"))
+        val viewModel = FriendsViewModel(gateway)
+        advanceUntilIdle()
+
+        // The server did delete it, whatever the client concluded about the response.
+        gateway.requests = emptyList()
+        viewModel.decline("r1")
+        advanceUntilIdle()
+
+        assertEquals(
+            "a failed decline must still refresh, or a request that is already gone stays on screen",
+            0,
+            viewModel.state.value.requests.size
+        )
+        assertEquals("Não foi possível recusar o convite.", viewModel.state.value.message)
     }
 
     @Test

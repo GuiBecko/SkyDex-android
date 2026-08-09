@@ -6,6 +6,7 @@ import com.example.skydex.data.remote.dto.FriendRequestResponse
 import com.example.skydex.data.remote.dto.FriendResponse
 import com.example.skydex.data.remote.dto.WeatherEventResponse
 import com.example.skydex.ui.social.SocialGateway
+import retrofit2.HttpException
 
 class SocialRepository(private val api: SkyDexApi) : SocialGateway {
 
@@ -18,8 +19,18 @@ class SocialRepository(private val api: SkyDexApi) : SocialGateway {
     override suspend fun accept(requestId: String): Result<Unit> =
         resultOf { api.acceptFriendRequest(requestId) }.map { }
 
-    override suspend fun decline(requestId: String): Result<Unit> =
-        resultOf { api.declineFriendRequest(requestId) }
+    /**
+     * Mirrors `CaptureRepository.delete`, and for the same two reasons.
+     *
+     * `declineFriendRequest` returns the raw [retrofit2.Response] because Retrofit 2.9.0 cannot map
+     * the backend's empty 204 onto a non-null `Unit`. That in turn means an unsuccessful status
+     * arrives here as an ordinary value, so [resultOf] alone would report a 403 or a 404 as a
+     * *successful* decline. Convert it to a failure explicitly.
+     */
+    override suspend fun decline(requestId: String): Result<Unit> = resultOf {
+        val response = api.declineFriendRequest(requestId)
+        if (!response.isSuccessful) throw HttpException(response)
+    }
 
     override suspend fun friends(): Result<List<FriendResponse>> =
         resultOf { api.friends() }

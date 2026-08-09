@@ -64,11 +64,24 @@ class FriendsViewModel(private val social: SocialGateway) : ViewModel() {
         }
     }
 
+    /**
+     * Refreshes on **both** branches, unlike [accept] and [sendRequest], and deliberately.
+     *
+     * Decline is a delete: if it failed the row may still be gone anyway, and if the client merely
+     * *thinks* it failed the row is certainly gone. Refreshing only on success left the request the
+     * user had just deleted sitting on screen under an error message — which is precisely what
+     * happened while `declineFriendRequest` was declared to return `Unit` and Retrofit turned every
+     * successful empty-204 into a failure.
+     *
+     * That cause is fixed at the API layer, but the screen should not need the network layer to be
+     * right in order to show the truth. Re-reading the server's list costs one request and cannot
+     * be wrong; the message still tells the user the call did not go through.
+     */
     fun decline(requestId: String) {
         viewModelScope.launch {
             social.decline(requestId)
-                .onSuccess { refresh() }
                 .onFailure { _state.update { it.copy(message = "Não foi possível recusar o convite.") } }
+            refresh()
         }
     }
 }

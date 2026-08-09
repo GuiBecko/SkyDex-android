@@ -8,11 +8,19 @@ class FakeSocialGateway(
     var friends: List<FriendResponse> = emptyList(),
     var requests: List<FriendRequestResponse> = emptyList(),
     private val sendResult: Result<Unit> = Result.success(Unit),
+    /**
+     * Configurable like [sendResult], and it has to be. This was hardcoded to
+     * `Result.success(Unit)`, which made every decline test unfailable — sitting exactly where a
+     * real, permanent decline failure was living unnoticed (Retrofit could not map the backend's
+     * empty 204 onto `Unit`, so every decline reported failure while succeeding).
+     */
+    var declineResult: Result<Unit> = Result.success(Unit),
     var feedResult: Result<List<WeatherEventResponse>> = Result.success(emptyList())
 ) : SocialGateway {
 
     val sentTo = mutableListOf<String>()
     val accepted = mutableListOf<String>()
+    val declined = mutableListOf<String>()
 
     /** Every `(page, size)` pair the ViewModel asked for, in order. */
     val feedCalls = mutableListOf<Pair<Int, Int>>()
@@ -29,7 +37,10 @@ class FakeSocialGateway(
         return Result.success(Unit)
     }
 
-    override suspend fun decline(requestId: String): Result<Unit> = Result.success(Unit)
+    override suspend fun decline(requestId: String): Result<Unit> {
+        declined += requestId
+        return declineResult
+    }
 
     override suspend fun friends(): Result<List<FriendResponse>> = Result.success(friends)
 
