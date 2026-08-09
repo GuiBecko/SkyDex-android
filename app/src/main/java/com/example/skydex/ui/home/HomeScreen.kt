@@ -84,13 +84,11 @@ fun HomeScreen(
         onStartCapture = onStartCapture,
         // Retry goes through the permission launcher rather than calling the ViewModel straight,
         // which is what the initial load does too. An already-granted permission makes `launch`
-        // return immediately with no dialog, so the granted case costs nothing. What this rescues
-        // is narrower than it looks, though: only the user who denied the permission, then fixed
-        // it in Settings, and is now looking at the error — for them `launch` re-checks and the
-        // permission is there. It does nothing for a user who denied and has NOT fixed it: Android
-        // will not show the system dialog again, so `launch` just re-reports the same denial. That
-        // second case is why `permissionDenied` below gets its own path to Settings instead of
-        // routing through this retry.
+        // return immediately with no dialog, so the granted case costs nothing. This is also the
+        // ONLY way `permissionDenied` (above) ever clears: that flag is written exclusively from
+        // this launcher's result map, so a user who denied, then fixed it in Settings, needs this
+        // same retry — re-run through `HomeContent`'s denied branch — to re-check and turn the
+        // flag back off. Nothing else in this screen re-evaluates the permission.
         onRetry = { requestLocation.launch(LOCATION_PERMISSIONS) },
         permissionDenied = permissionDenied,
         modifier = modifier
@@ -136,11 +134,16 @@ private fun HomeContent(
             // so without this button a user who opened the app offline would have no way back once
             // connectivity returned, short of killing the process. Matches CaptureScreen's copy.
             //
-            // A denied permission is a different dead end and gets a different affordance: Android
-            // will not show the system dialog again, so "Tentar novamente" here would just relaunch
-            // the request and land back on this same screen — a button the user can tap forever
-            // with no way out. `permissionDenied` — set from the RequestMultiplePermissions result
-            // map in HomeScreen — swaps the copy and the action for the one real way out, Settings.
+            // A denied permission gets an extra affordance rather than a swapped one. Two different
+            // users land here with `permissionDenied` true:
+            // - one has NOT fixed it in Settings yet — for them "Tentar novamente" just re-reports
+            //   the same denial (Android will not show the system dialog again after a denial), so
+            //   they need "Abrir Configurações" to actually do anything about it;
+            // - one HAS already fixed it in Settings and is looking at a stale error — for them
+            //   "Abrir Configurações" is a no-op detour, and "Tentar novamente" (`onRetry`, the same
+            //   permission launcher the non-denied branch uses) is what re-checks and clears
+            //   `permissionDenied`.
+            // Neither button can tell which user is looking at the screen, so both are offered.
             is UiState.Error -> item {
                 val context = LocalContext.current
                 Column(
@@ -169,9 +172,8 @@ private fun HomeContent(
                         ) {
                             Text("Abrir Configurações")
                         }
-                    } else {
-                        TextButton(onClick = onRetry) { Text("Tentar novamente") }
                     }
+                    TextButton(onClick = onRetry) { Text("Tentar novamente") }
                 }
             }
 
