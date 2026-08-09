@@ -55,7 +55,9 @@ class CaptureRepositoryTest {
 
     @Test
     fun `nearby passes the coordinates through`() = runBlocking {
-        val phenomenon = NearbyPhenomenonResponse("Tempestade", "2026-08-07T10:00", 21.5, "Perigo")
+        val phenomenon = NearbyPhenomenonResponse(
+            "THUNDERSTORM", "Tempestade", "RARE", "2026-08-07T10:00", 21.5, "Perigo"
+        )
         api.nearbyResponse = { listOf(phenomenon) }
 
         val result = repository.nearby(-23.55, -46.63)

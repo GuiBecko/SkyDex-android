@@ -1,5 +1,8 @@
 package com.example.skydex.ui.home
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -31,9 +34,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -52,9 +59,19 @@ fun HomeScreen(
 ) {
     val state by viewModel.state.collectAsState()
 
+    // Tracks whether the user has actively denied the permission (as opposed to simply never
+    // having been asked yet, or having granted it and then lost the fix for some other reason —
+    // e.g. GPS switched off). Android will not show the system permission dialog again after a
+    // denial, so once this flips true, "ask again" is not a real option: the only way out is
+    // Settings. Same flag, same reasoning as CaptureScreen's.
+    var permissionDenied by rememberSaveable { mutableStateOf(false) }
+
     val requestLocation = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { viewModel.loadForCurrentPosition() }
+    ) { results ->
+        permissionDenied = results.values.none { granted -> granted }
+        viewModel.loadForCurrentPosition()
+    }
 
     // Gated by the ViewModel, not by `LaunchedEffect(Unit)` alone: this effect re-runs on every
     // Activity recreation, and the ViewModel outlives them. See HomeViewModel.shouldLoadOnEntry.
@@ -67,11 +84,15 @@ fun HomeScreen(
         onStartCapture = onStartCapture,
         // Retry goes through the permission launcher rather than calling the ViewModel straight,
         // which is what the initial load does too. An already-granted permission makes `launch`
-        // return immediately with no dialog, so the granted case costs nothing; the case it buys is
-        // the user who denied the permission, fixed it, and is now looking at the error — a bare
-        // `loadForCurrentPosition()` would take a fix the app is still not allowed to take and put
-        // the same message back on screen. The callback calls the ViewModel either way.
+        // return immediately with no dialog, so the granted case costs nothing. What this rescues
+        // is narrower than it looks, though: only the user who denied the permission, then fixed
+        // it in Settings, and is now looking at the error — for them `launch` re-checks and the
+        // permission is there. It does nothing for a user who denied and has NOT fixed it: Android
+        // will not show the system dialog again, so `launch` just re-reports the same denial. That
+        // second case is why `permissionDenied` below gets its own path to Settings instead of
+        // routing through this retry.
         onRetry = { requestLocation.launch(LOCATION_PERMISSIONS) },
+        permissionDenied = permissionDenied,
         modifier = modifier
     )
 }
@@ -82,6 +103,7 @@ private fun HomeContent(
     state: UiState<HomeData>,
     onStartCapture: () -> Unit,
     onRetry: () -> Unit,
+    permissionDenied: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -113,18 +135,43 @@ private fun HomeContent(
             // `loadForCurrentPosition` has exactly one caller, the permission-launcher callback —
             // so without this button a user who opened the app offline would have no way back once
             // connectivity returned, short of killing the process. Matches CaptureScreen's copy.
+            //
+            // A denied permission is a different dead end and gets a different affordance: Android
+            // will not show the system dialog again, so "Tentar novamente" here would just relaunch
+            // the request and land back on this same screen — a button the user can tap forever
+            // with no way out. `permissionDenied` — set from the RequestMultiplePermissions result
+            // map in HomeScreen — swaps the copy and the action for the one real way out, Settings.
             is UiState.Error -> item {
+                val context = LocalContext.current
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = state.message,
+                        text = if (permissionDenied) {
+                            "Permissão de localização negada. Ative em Configurações para continuar."
+                        } else {
+                            state.message
+                        },
                         color = Color.Red,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    TextButton(onClick = onRetry) { Text("Tentar novamente") }
+                    if (permissionDenied) {
+                        TextButton(
+                            onClick = {
+                                val intent = Intent(
+                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    Uri.fromParts("package", context.packageName, null)
+                                )
+                                context.startActivity(intent)
+                            }
+                        ) {
+                            Text("Abrir Configurações")
+                        }
+                    } else {
+                        TextButton(onClick = onRetry) { Text("Tentar novamente") }
+                    }
                 }
             }
 
@@ -180,6 +227,15 @@ private fun MainActionCard(onClick: () -> Unit) {
     }
 }
 
+/** Colors the rarity chip on `PhenomenonCard`. Cheapest tier falls through to a neutral gray. */
+private fun rarityColor(rarity: String): Color = when (rarity) {
+    "LEGENDARY" -> Color(0xFFF59E0B)
+    "EPIC" -> Color(0xFF8B5CF6)
+    "RARE" -> Color(0xFF3B82F6)
+    "UNCOMMON" -> Color(0xFF10B981)
+    else -> Color(0xFF6B7280)
+}
+
 @Composable
 private fun PhenomenonCard(phenomenon: NearbyPhenomenonResponse) {
     val alertColor = when (phenomenon.alertLevel) {
@@ -203,24 +259,40 @@ private fun PhenomenonCard(phenomenon: NearbyPhenomenonResponse) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = phenomenon.phenomenon, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(text = phenomenon.phenomenonName, fontWeight = FontWeight.Bold, fontSize = 18.sp)
 
                 val temperature = phenomenon.temperatureCelsius?.let { "$it °C" } ?: "Temp. Indisponível"
                 Text(text = temperature, color = Color.Gray, fontSize = 14.sp)
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                Surface(
-                    color = alertColor.copy(alpha = 0.1f),
-                    shape = MaterialTheme.shapes.small
-                ) {
-                    Text(
-                        text = phenomenon.alertLevel.uppercase(),
-                        color = alertColor,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Surface(
+                        color = alertColor.copy(alpha = 0.1f),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            text = phenomenon.alertLevel.uppercase(),
+                            color = alertColor,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    val rarityTint = rarityColor(phenomenon.rarity)
+                    Surface(
+                        color = rarityTint.copy(alpha = 0.1f),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            text = phenomenon.rarity,
+                            color = rarityTint,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
                 }
             }
 
@@ -246,9 +318,16 @@ private fun PhenomenonCard(phenomenon: NearbyPhenomenonResponse) {
 }
 
 private val previewPhenomena = listOf(
-    NearbyPhenomenonResponse("Tempestade elétrica", "2026-08-07T14:30", 21.5, "Perigo"),
-    NearbyPhenomenonResponse("Halo solar", "2026-08-07T09:15", 27.0, "Interessante"),
-    NearbyPhenomenonResponse("Névoa", "2026-08-07T06:00", null, "Tranquilo")
+    NearbyPhenomenonResponse(
+        "THUNDERSTORM", "Tempestade com Trovões", "RARE", "2026-08-07T14:30", 21.5, "Perigo"
+    ),
+    NearbyPhenomenonResponse(
+        "HAILSTORM", "Tempestade Severa com Granizo", "LEGENDARY", "2026-08-07T09:15", 27.0,
+        "Perigo Extremo!"
+    ),
+    NearbyPhenomenonResponse(
+        "FOG", "Nevoeiro Intenso", "UNCOMMON", "2026-08-07T06:00", null, "Interessante"
+    )
 )
 
 private val previewCoordinates = Coordinates(-23.55, -46.63)

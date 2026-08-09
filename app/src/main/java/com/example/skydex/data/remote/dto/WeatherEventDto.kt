@@ -24,7 +24,11 @@ data class WeatherEventResponse(
 )
 
 data class NearbyPhenomenonResponse(
+    /** Enum name, e.g. "THUNDERSTORM" — stable identifier for the species. */
     val phenomenon: String,
+    /** Display copy, e.g. "Tempestade com Trovões". */
+    val phenomenonName: String,
+    val rarity: String,
     val time: String,
     val temperatureCelsius: Double?,
     val alertLevel: String

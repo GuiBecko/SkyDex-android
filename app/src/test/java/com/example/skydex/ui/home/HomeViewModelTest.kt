@@ -40,7 +40,9 @@ class HomeViewModelTest {
     private val coordinates = Coordinates(-30.0346, -51.2177)
 
     private val storm = NearbyPhenomenonResponse(
-        phenomenon = "Tempestade",
+        phenomenon = "THUNDERSTORM",
+        phenomenonName = "Tempestade",
+        rarity = "RARE",
         time = "2026-08-07T10:00",
         temperatureCelsius = 21.5,
         alertLevel = "Perigo"
