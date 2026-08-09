@@ -56,6 +56,7 @@ import com.example.skydex.util.LOCATION_PERMISSIONS
 fun HomeScreen(
     viewModel: HomeViewModel,
     onStartCapture: () -> Unit,
+    onOpenMyCaptures: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.state.collectAsState()
@@ -83,6 +84,7 @@ fun HomeScreen(
     HomeContent(
         state = state,
         onStartCapture = onStartCapture,
+        onOpenMyCaptures = onOpenMyCaptures,
         // Retry goes through the permission launcher rather than calling the ViewModel straight,
         // which is what the initial load does too. An already-granted permission makes `launch`
         // return immediately with no dialog, so the granted case costs nothing. This is also the
@@ -101,6 +103,7 @@ fun HomeScreen(
 private fun HomeContent(
     state: UiState<HomeData>,
     onStartCapture: () -> Unit,
+    onOpenMyCaptures: () -> Unit,
     onRetry: () -> Unit,
     permissionDenied: Boolean = false,
     modifier: Modifier = Modifier
@@ -122,6 +125,10 @@ private fun HomeContent(
         }
 
         item { MainActionCard(onClick = onStartCapture) }
+
+        item {
+            TextButton(onClick = onOpenMyCaptures) { Text("Meus Registros") }
+        }
 
         when (state) {
             is UiState.Loading -> item {
@@ -332,6 +339,7 @@ private fun HomeContentPreview() {
     HomeContent(
         state = UiState.Success(HomeData(previewCoordinates, previewPhenomena)),
         onStartCapture = {},
+        onOpenMyCaptures = {},
         onRetry = {}
     )
 }
@@ -339,7 +347,7 @@ private fun HomeContentPreview() {
 @Preview(showBackground = true, name = "Eventos próximos - carregando")
 @Composable
 private fun HomeContentLoadingPreview() {
-    HomeContent(state = UiState.Loading, onStartCapture = {}, onRetry = {})
+    HomeContent(state = UiState.Loading, onStartCapture = {}, onOpenMyCaptures = {}, onRetry = {})
 }
 
 @Preview(showBackground = true, name = "Eventos próximos - erro")
@@ -348,6 +356,7 @@ private fun HomeContentErrorPreview() {
     HomeContent(
         state = UiState.Error("Não foi possível carregar os eventos próximos."),
         onStartCapture = {},
+        onOpenMyCaptures = {},
         onRetry = {}
     )
 }

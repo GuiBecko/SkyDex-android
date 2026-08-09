@@ -8,4 +8,6 @@ object Routes {
     const val MY_CAPTURES = "my_captures"
     const val CAPTURE = "capture"
     const val SKYDEX = "skydex"
+    const val FEED = "feed"
+    const val FRIENDS = "friends"
 }

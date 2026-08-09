@@ -1,6 +1,9 @@
 package com.example.skydex.data.remote
 
 import com.example.skydex.data.remote.dto.CreateWeatherEventRequest
+import com.example.skydex.data.remote.dto.FriendRequestBody
+import com.example.skydex.data.remote.dto.FriendRequestResponse
+import com.example.skydex.data.remote.dto.FriendResponse
 import com.example.skydex.data.remote.dto.LoginRequest
 import com.example.skydex.data.remote.dto.LoginResponse
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
@@ -58,4 +61,22 @@ interface SkyDexApi {
 
     @GET("api/skydex")
     suspend fun skyDex(): SkyDexResponse
+
+    @POST("api/friends/requests")
+    suspend fun sendFriendRequest(@Body body: FriendRequestBody): FriendRequestResponse
+
+    @GET("api/friends/requests")
+    suspend fun incomingFriendRequests(): List<FriendRequestResponse>
+
+    @POST("api/friends/requests/{id}/accept")
+    suspend fun acceptFriendRequest(@Path("id") id: String): FriendResponse
+
+    @DELETE("api/friends/requests/{id}")
+    suspend fun declineFriendRequest(@Path("id") id: String)
+
+    @GET("api/friends")
+    suspend fun friends(): List<FriendResponse>
+
+    @GET("api/feed")
+    suspend fun feed(@Query("page") page: Int, @Query("size") size: Int): List<WeatherEventResponse>
 }

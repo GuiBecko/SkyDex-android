@@ -1,6 +1,9 @@
 package com.example.skydex.data.remote
 
 import com.example.skydex.data.remote.dto.CreateWeatherEventRequest
+import com.example.skydex.data.remote.dto.FriendRequestBody
+import com.example.skydex.data.remote.dto.FriendRequestResponse
+import com.example.skydex.data.remote.dto.FriendResponse
 import com.example.skydex.data.remote.dto.LoginRequest
 import com.example.skydex.data.remote.dto.LoginResponse
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
@@ -30,6 +33,12 @@ class FakeSkyDexApi : SkyDexApi {
     var deleteResponse: () -> Response<Unit> = { unsupported("deleteCapture") }
     var uploadPhotoResponse: () -> PhotoUploadResponse = { unsupported("uploadPhoto") }
     var skyDexResponse: () -> SkyDexResponse = { unsupported("skyDex") }
+    var sendFriendRequestResponse: (FriendRequestBody) -> FriendRequestResponse = { unsupported("sendFriendRequest") }
+    var incomingFriendRequestsResponse: () -> List<FriendRequestResponse> = { unsupported("incomingFriendRequests") }
+    var acceptFriendRequestResponse: (String) -> FriendResponse = { unsupported("acceptFriendRequest") }
+    var declineFriendRequestResponse: (String) -> Unit = { unsupported("declineFriendRequest") }
+    var friendsResponse: () -> List<FriendResponse> = { unsupported("friends") }
+    var feedResponse: (Int, Int) -> List<WeatherEventResponse> = { _, _ -> unsupported("feed") }
 
     /** Coordinates of every `nearbyPhenomena` call, in order. */
     val nearbyCalls = mutableListOf<Pair<Double, Double>>()
@@ -75,6 +84,19 @@ class FakeSkyDexApi : SkyDexApi {
     }
 
     override suspend fun skyDex(): SkyDexResponse = skyDexResponse()
+
+    override suspend fun sendFriendRequest(body: FriendRequestBody): FriendRequestResponse =
+        sendFriendRequestResponse(body)
+
+    override suspend fun incomingFriendRequests(): List<FriendRequestResponse> = incomingFriendRequestsResponse()
+
+    override suspend fun acceptFriendRequest(id: String): FriendResponse = acceptFriendRequestResponse(id)
+
+    override suspend fun declineFriendRequest(id: String) = declineFriendRequestResponse(id)
+
+    override suspend fun friends(): List<FriendResponse> = friendsResponse()
+
+    override suspend fun feed(page: Int, size: Int): List<WeatherEventResponse> = feedResponse(page, size)
 }
 
 private fun unsupported(endpoint: String): Nothing =

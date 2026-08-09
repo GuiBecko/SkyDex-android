@@ -23,12 +23,23 @@ import com.example.skydex.ui.capture.CaptureViewModel
 import com.example.skydex.ui.captures.MyCapturesScreen
 import com.example.skydex.ui.captures.MyCapturesViewModel
 import com.example.skydex.ui.components.AppBottomBar
+import com.example.skydex.ui.feed.FeedScreen
+import com.example.skydex.ui.feed.FeedViewModel
+import com.example.skydex.ui.friends.FriendsScreen
+import com.example.skydex.ui.friends.FriendsViewModel
 import com.example.skydex.ui.home.HomeScreen
 import com.example.skydex.ui.home.HomeViewModel
 import com.example.skydex.ui.skydex.SkyDexScreen
 import com.example.skydex.ui.skydex.SkyDexViewModel
 
-private val BAR_ROUTES = setOf(Routes.HOME, Routes.NEARBY, Routes.MY_CAPTURES, Routes.SKYDEX)
+private val BAR_ROUTES = setOf(
+    Routes.HOME,
+    Routes.NEARBY,
+    Routes.MY_CAPTURES,
+    Routes.SKYDEX,
+    Routes.FEED,
+    Routes.FRIENDS
+)
 
 /**
  * The one place in the UI that is allowed to know about [ServiceLocator]: it builds each
@@ -111,14 +122,11 @@ fun SkyDexNavHost(session: Session?, modifier: Modifier = Modifier) {
                 }
                 HomeScreen(
                     viewModel = vm,
-                    onStartCapture = { navController.navigate(Routes.CAPTURE) }
+                    onStartCapture = { navController.navigate(Routes.CAPTURE) },
+                    onOpenMyCaptures = { navController.navigate(Routes.MY_CAPTURES) }
                 )
             }
 
-            // Registered but unreachable: AppBottomBar still ships no NEARBY tab. See the note on
-            // Routes.NEARBY usage in AppBottomBar.kt — restoring the tab is left to whichever task
-            // actually gives NEARBY a screen distinct from HOME's dashboard (see the report on this
-            // task for why Task 10's own plan leaves that split undone).
             composable(Routes.NEARBY) {
                 val vm: HomeViewModel = viewModel {
                     HomeViewModel(
@@ -128,7 +136,8 @@ fun SkyDexNavHost(session: Session?, modifier: Modifier = Modifier) {
                 }
                 HomeScreen(
                     viewModel = vm,
-                    onStartCapture = { navController.navigate(Routes.CAPTURE) }
+                    onStartCapture = { navController.navigate(Routes.CAPTURE) },
+                    onOpenMyCaptures = { navController.navigate(Routes.MY_CAPTURES) }
                 )
             }
 
@@ -157,6 +166,16 @@ fun SkyDexNavHost(session: Session?, modifier: Modifier = Modifier) {
             composable(Routes.SKYDEX) {
                 val vm: SkyDexViewModel = viewModel { SkyDexViewModel(ServiceLocator.skyDexRepository) }
                 SkyDexScreen(viewModel = vm)
+            }
+
+            composable(Routes.FEED) {
+                val vm: FeedViewModel = viewModel { FeedViewModel(ServiceLocator.socialRepository) }
+                FeedScreen(viewModel = vm)
+            }
+
+            composable(Routes.FRIENDS) {
+                val vm: FriendsViewModel = viewModel { FriendsViewModel(ServiceLocator.socialRepository) }
+                FriendsScreen(viewModel = vm)
             }
         }
     }

@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CatchingPokemon
-import androidx.compose.material.icons.filled.Dataset
+import androidx.compose.material.icons.filled.DynamicFeed
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
@@ -29,13 +31,12 @@ private data class BarItem(val route: String, val icon: ImageVector, val label: 
 
 @Composable
 fun AppBottomBar(currentRoute: String, onNavigate: (String) -> Unit) {
-    // No tab for Routes.NEARBY yet. Until Task 10 splits the screens, HOME and NEARBY render the
-    // same list, and shipping two tabs that produce an identical screen is a control that lies.
-    // The route stays registered in the graph so Task 10 only has to add the BarItem back.
     val items = listOf(
+        BarItem(Routes.NEARBY, Icons.Default.WbSunny, "Eventos Próximos"),
+        BarItem(Routes.FEED, Icons.Default.DynamicFeed, "Feed"),
         BarItem(Routes.HOME, Icons.Default.Home, "Início"),
         BarItem(Routes.SKYDEX, Icons.Default.CatchingPokemon, "SkyDex"),
-        BarItem(Routes.MY_CAPTURES, Icons.Default.Dataset, "Meus Registros")
+        BarItem(Routes.FRIENDS, Icons.Default.People, "Amigos")
     )
 
     Row(
