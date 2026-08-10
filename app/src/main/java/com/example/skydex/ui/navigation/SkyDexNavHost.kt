@@ -36,7 +36,6 @@ import com.example.skydex.ui.skydex.SkyDexViewModel
 
 private val BAR_ROUTES = setOf(
     Routes.HOME,
-    Routes.NEARBY,
     Routes.MY_CAPTURES,
     Routes.SKYDEX,
     Routes.FEED,
@@ -117,20 +116,6 @@ fun SkyDexNavHost(session: Session?, modifier: Modifier = Modifier) {
             }
 
             composable(Routes.HOME) {
-                val vm: HomeViewModel = viewModel {
-                    HomeViewModel(
-                        ServiceLocator.captureRepository,
-                        ServiceLocator.deviceLocation::current
-                    )
-                }
-                HomeScreen(
-                    viewModel = vm,
-                    onStartCapture = { navController.navigate(Routes.CAPTURE) },
-                    onOpenMyCaptures = { navController.navigate(Routes.MY_CAPTURES) }
-                )
-            }
-
-            composable(Routes.NEARBY) {
                 val vm: HomeViewModel = viewModel {
                     HomeViewModel(
                         ServiceLocator.captureRepository,

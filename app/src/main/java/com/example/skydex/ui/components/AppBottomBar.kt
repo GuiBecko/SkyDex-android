@@ -14,7 +14,6 @@ import androidx.compose.material.icons.filled.CatchingPokemon
 import androidx.compose.material.icons.filled.DynamicFeed
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
@@ -32,7 +31,6 @@ private data class BarItem(val route: String, val icon: ImageVector, val label: 
 @Composable
 fun AppBottomBar(currentRoute: String, onNavigate: (String) -> Unit) {
     val items = listOf(
-        BarItem(Routes.NEARBY, Icons.Default.WbSunny, "Eventos Próximos"),
         BarItem(Routes.FEED, Icons.Default.DynamicFeed, "Feed"),
         BarItem(Routes.HOME, Icons.Default.Home, "Início"),
         BarItem(Routes.SKYDEX, Icons.Default.CatchingPokemon, "SkyDex"),
