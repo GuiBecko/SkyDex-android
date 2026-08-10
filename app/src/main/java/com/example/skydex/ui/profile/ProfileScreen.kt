@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -83,9 +84,26 @@ fun ProfileScreen(
             is UiState.Success -> ProfileBody(
                 profile = current.data,
                 onOpenMyCaptures = onOpenMyCaptures,
-                onOpenFriends = onOpenFriends,
-                onLogout = viewModel::logout
+                onOpenFriends = onOpenFriends
             )
+        }
+
+        // Outside the `when`, and that placement is the whole point.
+        //
+        // This is the only logout affordance in the app. While it lived inside `ProfileBody` it
+        // rendered on `UiState.Success` alone — so when the token expired, `profile()` answered
+        // 401, Profile landed in `Error`, and the only way out of a signed-in-but-unauthorised app
+        // sat behind a load that could never succeed. The app was soft-bricked until the user
+        // cleared its data. Logging out needs no profile data, so it must not depend on having any.
+        //
+        // (The real fix for the 401 itself is an interceptor that clears the session and returns
+        // the user to login; that is deliberately still on the backlog. This makes the dead end
+        // escapable in the meantime.)
+        TextButton(
+            onClick = viewModel::logout,
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+        ) {
+            Text("Sair da conta", color = Color(0xFFB91C1C))
         }
     }
 }
@@ -94,10 +112,14 @@ fun ProfileScreen(
 private fun ProfileBody(
     profile: ProfileResponse,
     onOpenMyCaptures: () -> Unit,
-    onOpenFriends: () -> Unit,
-    onLogout: () -> Unit
+    onOpenFriends: () -> Unit
 ) {
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        // Room for the logout button, which the parent draws over this list's bottom edge so it
+        // is reachable in every UiState. Without this the last badge scrolls under it.
+        contentPadding = PaddingValues(bottom = 56.dp)
+    ) {
         item { IdentityCard(profile) }
         item { StatsRow(profile, onOpenMyCaptures, onOpenFriends) }
 
@@ -112,12 +134,6 @@ private fun ProfileBody(
 
         // Unlocked badges first so the shelf leads with what the user actually earned.
         items(profile.badges.sortedByDescending { it.unlocked }) { badge -> BadgeRow(badge) }
-
-        item {
-            TextButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
-                Text("Sair da conta", color = Color(0xFFB91C1C))
-            }
-        }
     }
 }
 
