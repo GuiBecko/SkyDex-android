@@ -1,5 +1,6 @@
 package com.example.skydex.ui.auth
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -7,7 +8,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -17,12 +20,16 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.skydex.ui.common.Tone
+import com.example.skydex.ui.common.UiMessage
+import com.example.skydex.ui.components.SkyDexNotice
+import com.example.skydex.ui.theme.SkyDexPalette
+import com.example.skydex.ui.theme.SkyDexSpacing
+import com.example.skydex.ui.theme.SkyDexTheme
 
 @Composable
 fun LoginScreen(
@@ -63,54 +70,72 @@ private fun LoginContent(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(24.dp),
+            // This screen used to declare no background at all, so in dark mode it inherited the
+            // dark Surface while every colour in it assumed light (audit finding B4).
+            .background(MaterialTheme.colorScheme.background)
+            .padding(SkyDexSpacing.xl),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("SkyDex", fontSize = 36.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF0284C7))
         Text(
-            "Seu radar meteorológico pessoal",
-            color = Color.Gray,
-            modifier = Modifier.padding(bottom = 32.dp)
+            text = "SkyDex",
+            // Was 36sp ExtraBold — off both ends of the scale, which tops out at 28sp Bold.
+            style = MaterialTheme.typography.headlineMedium,
+            // `colorScheme.primary`, not `accentDecorative`: this is coloured text, and the
+            // brighter hue measures 3.88:1 against the background.
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = "Seu radar meteorológico pessoal",
+            style = MaterialTheme.typography.bodyLarge,
+            color = SkyDexPalette.colors.textSecondary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = SkyDexSpacing.xxl)
         )
 
         OutlinedTextField(
             value = state.email,
             onValueChange = onEmailChanged,
             label = { Text("E-mail") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Email,
+                capitalization = KeyboardCapitalization.None
+            ),
+            modifier = Modifier.fillMaxWidth()
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(SkyDexSpacing.lg))
 
-        OutlinedTextField(
+        PasswordField(
             value = state.password,
             onValueChange = onPasswordChanged,
-            label = { Text("Senha") },
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            label = "Senha"
         )
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(SkyDexSpacing.xl))
 
-        state.errorMessage?.let {
-            Text(it, color = Color.Red, modifier = Modifier.padding(bottom = 16.dp))
+        // Non-destructive: the form stays exactly as the user left it, with the notice above the
+        // button rather than a red sentence replacing anything.
+        state.errorMessage?.let { message ->
+            SkyDexNotice(message = message, modifier = Modifier.padding(bottom = SkyDexSpacing.lg))
         }
 
         Button(
             onClick = onSubmit,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp),
+                .height(SkyDexSpacing.xxxl),
             enabled = !state.submitting
         ) {
-            Text(if (state.submitting) "Entrando..." else "Entrar", fontSize = 16.sp)
+            Text(
+                text = if (state.submitting) "Entrando..." else "Entrar",
+                style = MaterialTheme.typography.titleMedium
+            )
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(SkyDexSpacing.lg))
 
         TextButton(onClick = onNavigateToRegister) {
-            Text("Não tem uma conta? Registre-se")
+            Text("Não tem uma conta? Registre-se", style = MaterialTheme.typography.bodyLarge)
         }
     }
 }
@@ -118,26 +143,69 @@ private fun LoginContent(
 @Preview(showBackground = true)
 @Composable
 private fun LoginContentPreview() {
-    LoginContent(
-        state = LoginUiState(email = "pilot@skydex.com", password = "secret123"),
-        onEmailChanged = {},
-        onPasswordChanged = {},
-        onSubmit = {},
-        onNavigateToRegister = {}
-    )
+    SkyDexTheme(darkTheme = false) {
+        LoginContent(
+            state = LoginUiState(email = "pilot@skydex.com", password = "secret123"),
+            onEmailChanged = {},
+            onPasswordChanged = {},
+            onSubmit = {},
+            onNavigateToRegister = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Login - escuro", backgroundColor = 0xFF0B1220)
+@Composable
+private fun LoginContentDarkPreview() {
+    SkyDexTheme(darkTheme = true) {
+        LoginContent(
+            state = LoginUiState(email = "pilot@skydex.com", password = "secret123"),
+            onEmailChanged = {},
+            onPasswordChanged = {},
+            onSubmit = {},
+            onNavigateToRegister = {}
+        )
+    }
 }
 
 @Preview(showBackground = true, name = "Login com erro")
 @Composable
 private fun LoginContentErrorPreview() {
-    LoginContent(
-        state = LoginUiState(
-            email = "pilot@skydex.com",
-            errorMessage = "Credenciais inválidas ou servidor indisponível."
-        ),
-        onEmailChanged = {},
-        onPasswordChanged = {},
-        onSubmit = {},
-        onNavigateToRegister = {}
-    )
+    SkyDexTheme(darkTheme = false) {
+        LoginContent(
+            state = LoginUiState(
+                email = "pilot@skydex.com",
+                errorMessage = UiMessage(
+                    title = "E-mail ou senha não conferem",
+                    body = "Confira os dados e tente de novo.",
+                    tone = Tone.NOTICE
+                )
+            ),
+            onEmailChanged = {},
+            onPasswordChanged = {},
+            onSubmit = {},
+            onNavigateToRegister = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Login com erro - escuro", backgroundColor = 0xFF0B1220)
+@Composable
+private fun LoginContentErrorDarkPreview() {
+    SkyDexTheme(darkTheme = true) {
+        LoginContent(
+            state = LoginUiState(
+                email = "pilot@skydex.com",
+                errorMessage = UiMessage(
+                    title = "E-mail ou senha não conferem",
+                    body = "Confira os dados e tente de novo.",
+                    tone = Tone.NOTICE
+                )
+            ),
+            onEmailChanged = {},
+            onPasswordChanged = {},
+            onSubmit = {},
+            onNavigateToRegister = {}
+        )
+    }
 }

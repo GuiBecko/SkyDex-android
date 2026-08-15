@@ -1,6 +1,8 @@
 package com.example.skydex.ui.auth
 
 import com.example.skydex.ui.common.RecordingLogWarning
+import com.example.skydex.ui.common.Tone
+import com.example.skydex.ui.common.UiMessage
 import com.example.skydex.ui.common.noLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -15,6 +17,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
+import retrofit2.HttpException
+import retrofit2.Response
 import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -40,9 +46,10 @@ class LoginViewModelTest {
     }
 
     /**
-     * The user-facing copy is deliberately generic, so the throwable reaching logcat is the only
-     * thing that separates offline from a 401 — and the message must not carry the e-mail that
-     * would then travel into every captured bug report.
+     * A dropped connection now gets the *connection* message rather than a credentials one — the
+     * two used to share a sentence, and they ask the user for opposite things (audit finding A6).
+     * What has to stay true either way: the exact cause reaches logcat, and the message carrying
+     * it must not include the e-mail, which would travel into every captured bug report.
      */
     @Test
     fun `a failed login surfaces a message and stays logged out`() = runTest(dispatcher) {
@@ -58,7 +65,12 @@ class LoginViewModelTest {
 
         assertEquals(false, viewModel.state.value.loggedIn)
         assertEquals(
-            "Credenciais inválidas ou servidor indisponível.",
+            UiMessage(
+                title = "Sem conexão",
+                body = "Verifique sua internet e tente de novo.",
+                tone = Tone.NOTICE,
+                actionLabel = "Tentar de novo"
+            ),
             viewModel.state.value.errorMessage
         )
 
@@ -68,6 +80,43 @@ class LoginViewModelTest {
             "the e-mail is PII and must not reach logcat",
             warning.message.contains("pilot@skydex.com")
         )
+    }
+
+    /**
+     * The 401 path, and the property about it that must survive every future copy edit: the
+     * message says the *pair* does not match and never which half. Anything more specific turns
+     * this form into an oracle for enumerating registered e-mail addresses — which is exactly why
+     * the backend answers the same 401 for an unknown account and for a wrong password.
+     */
+    @Test
+    fun `rejected credentials never reveal which half was wrong`() = runTest(dispatcher) {
+        val repository = FakeAuthRepository(
+            result = Result.failure(
+                HttpException(
+                    Response.error<Any>(
+                        401,
+                        """{"error":"Invalid email or password"}"""
+                            .toResponseBody("application/json".toMediaType())
+                    )
+                )
+            )
+        )
+        val viewModel = LoginViewModel(repository, noLogging)
+
+        viewModel.onEmailChanged("pilot@skydex.com")
+        viewModel.onPasswordChanged("wrong-but-long-enough")
+        viewModel.submit()
+        advanceUntilIdle()
+
+        val message = viewModel.state.value.errorMessage!!
+        assertEquals("E-mail ou senha não conferem", message.title)
+        assertEquals("Confira os dados e tente de novo.", message.body)
+        assertEquals(Tone.NOTICE, message.tone)
+
+        val shown = "${message.title} ${message.body}".lowercase()
+        assertFalse("must not blame the password alone", shown.contains("senha incorreta"))
+        assertFalse("must not say the account is unknown", shown.contains("não existe"))
+        assertFalse("must not echo the backend's English", shown.contains("invalid"))
     }
 
     @Test
@@ -80,7 +129,7 @@ class LoginViewModelTest {
         advanceUntilIdle()
 
         assertEquals(0, repository.loginCalls)
-        assertEquals("Preencha e-mail e senha.", viewModel.state.value.errorMessage)
+        assertEquals("Preencha e-mail e senha", viewModel.state.value.errorMessage?.title)
     }
 
     /**
@@ -129,7 +178,7 @@ class LoginViewModelTest {
 
         viewModel.submit()
         advanceUntilIdle()
-        assertEquals("Preencha e-mail e senha.", viewModel.state.value.errorMessage)
+        assertEquals("Preencha e-mail e senha", viewModel.state.value.errorMessage?.title)
 
         viewModel.onEmailChanged("pilot@skydex.com")
         assertEquals(null, viewModel.state.value.errorMessage)

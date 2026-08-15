@@ -65,7 +65,7 @@ class ProfileViewModelTest {
 
         val state = viewModel.state.value
         assertTrue(state is UiState.Error)
-        assertEquals("Não foi possível carregar seu perfil.", (state as UiState.Error).message)
+        assertEquals("Sem conexão", (state as UiState.Error).message.title)
     }
 
     @Test
@@ -100,6 +100,12 @@ class ProfileViewModelTest {
         assertEquals(true, viewModel.loggedOut.value)
     }
 
+    /**
+     * The message still has to arrive — and the profile has to survive it (finding A4). Failing to
+     * leave is no reason to take the screen away: before this, a failed session write replaced a
+     * fully loaded profile with a full-area error, so the identity card, the stats and the badge
+     * shelf all disappeared because a disk write did not land.
+     */
     @Test
     fun `a failed session write surfaces an error instead of crashing`() = runTest(dispatcher) {
         val viewModel = ProfileViewModel(FakeProfileGateway(Result.success(sample))) {
@@ -112,11 +118,34 @@ class ProfileViewModelTest {
 
         assertEquals(false, viewModel.loggedOut.value)
         val state = viewModel.state.value
-        assertTrue(state is UiState.Error)
-        assertEquals("Não foi possível sair da conta. Tente novamente.", (state as UiState.Error).message)
+        assertTrue(state is UiState.Success)
+        assertEquals(sample, (state as UiState.Success).data)
+        assertEquals("Não deu para sair da conta", state.staleMessage?.title)
+    }
+
+    /** A refresh that fails over a loaded profile keeps every part of it and adds a banner (A4). */
+    @Test
+    fun `a failed refresh keeps the profile and carries the message`() = runTest(dispatcher) {
+        val gateway = SwitchableProfileGateway(Result.success(sample))
+        val viewModel = ProfileViewModel(gateway) {}
+        advanceUntilIdle()
+
+        gateway.result = Result.failure(IOException("offline"))
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        val state = viewModel.state.value
+        assertTrue(state is UiState.Success)
+        assertEquals(sample, (state as UiState.Success).data)
+        assertEquals("Sem conexão", state.staleMessage?.title)
     }
 }
 
 class FakeProfileGateway(private val result: Result<ProfileResponse>) : ProfileGateway {
+    override suspend fun profile(): Result<ProfileResponse> = result
+}
+
+/** A gateway whose answer can change between calls, so one ViewModel can see a load and a reload. */
+class SwitchableProfileGateway(var result: Result<ProfileResponse>) : ProfileGateway {
     override suspend fun profile(): Result<ProfileResponse> = result
 }

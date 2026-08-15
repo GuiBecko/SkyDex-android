@@ -3,8 +3,12 @@ package com.example.skydex.ui.auth
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.skydex.data.repository.AuthGateway
+import com.example.skydex.ui.common.ErrorContext
 import com.example.skydex.ui.common.LogWarning
+import com.example.skydex.ui.common.Tone
+import com.example.skydex.ui.common.UiMessage
 import com.example.skydex.ui.common.androidLogWarning
+import com.example.skydex.ui.common.toUiMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,7 +21,7 @@ data class RegisterUiState(
     val password: String = "",
     val submitting: Boolean = false,
     val registered: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: UiMessage? = null
 )
 
 class RegisterViewModel(
@@ -49,16 +53,21 @@ class RegisterViewModel(
         _state.update { it.copy(submitting = true, errorMessage = null) }
         viewModelScope.launch {
             val result = auth.register(current.name, current.email, current.password)
+            val failure = result.exceptionOrNull()
             // The e-mail stays out of the message for the same reason it stays out of the login
             // one: it is PII, it travels into bug reports, and the throwable is the diagnostic part.
-            result.exceptionOrNull()?.let { logWarning(TAG, "registration failed", it) }
+            failure?.let { logWarning(TAG, "registration failed", it) }
             _state.update {
-                if (result.isSuccess) {
+                if (failure == null) {
                     it.copy(submitting = false, registered = true)
                 } else {
+                    // The old copy asked the user a question the app already knew the answer to —
+                    // "Não foi possível registrar. O e-mail já existe?" while the server was
+                    // replying 409 "Email already registered" in the same breath (finding A6).
+                    // The presenter reads the status and states it.
                     it.copy(
                         submitting = false,
-                        errorMessage = "Não foi possível registrar. O e-mail já existe?"
+                        errorMessage = failure.toUiMessage(ErrorContext.REGISTER)
                     )
                 }
             }
@@ -70,12 +79,18 @@ class RegisterViewModel(
      * server's 400 came back through the generic failure branch and told the user their e-mail was
      * taken — pointing at the wrong field entirely.
      */
-    private fun validate(state: RegisterUiState): String? = when {
-        state.name.isBlank() || state.email.isBlank() || state.password.isBlank() ->
-            "Preencha todos os campos."
+    private fun validate(state: RegisterUiState): UiMessage? = when {
+        state.name.isBlank() || state.email.isBlank() || state.password.isBlank() -> UiMessage(
+            title = "Preencha todos os campos",
+            body = "Nome, e-mail e senha são necessários para criar sua conta.",
+            tone = Tone.NOTICE
+        )
 
-        state.password.length < MIN_PASSWORD_LENGTH ->
-            "A senha deve ter no mínimo $MIN_PASSWORD_LENGTH caracteres."
+        state.password.length < MIN_PASSWORD_LENGTH -> UiMessage(
+            title = "A senha está curta",
+            body = "Use no mínimo $MIN_PASSWORD_LENGTH caracteres.",
+            tone = Tone.NOTICE
+        )
 
         else -> null
     }

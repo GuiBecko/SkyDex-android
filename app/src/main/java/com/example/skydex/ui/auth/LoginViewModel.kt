@@ -3,8 +3,12 @@ package com.example.skydex.ui.auth
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.skydex.data.repository.AuthGateway
+import com.example.skydex.ui.common.ErrorContext
 import com.example.skydex.ui.common.LogWarning
+import com.example.skydex.ui.common.Tone
+import com.example.skydex.ui.common.UiMessage
 import com.example.skydex.ui.common.androidLogWarning
+import com.example.skydex.ui.common.toUiMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,7 +20,14 @@ data class LoginUiState(
     val password: String = "",
     val submitting: Boolean = false,
     val loggedIn: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: UiMessage? = null
+)
+
+/** Local validation: nothing was sent, so there is no throwable for `ErrorPresenter` to read. */
+private val MissingCredentials = UiMessage(
+    title = "Preencha e-mail e senha",
+    body = "Os dois campos são necessários para entrar.",
+    tone = Tone.NOTICE
 )
 
 /**
@@ -40,7 +51,7 @@ class LoginViewModel(
     fun submit() {
         val current = _state.value
         if (current.email.isBlank() || current.password.isBlank()) {
-            _state.update { it.copy(errorMessage = "Preencha e-mail e senha.") }
+            _state.update { it.copy(errorMessage = MissingCredentials) }
             return
         }
 
@@ -51,19 +62,28 @@ class LoginViewModel(
         _state.update { it.copy(submitting = true, errorMessage = null) }
         viewModelScope.launch {
             val result = auth.login(current.email, current.password)
+            val failure = result.exceptionOrNull()
             // The e-mail is deliberately left out of the message: it is the user's PII and it ends
             // up in any captured bug report, while adding nothing the throwable does not already say.
-            result.exceptionOrNull()?.let { logWarning(TAG, "login failed", it) }
+            failure?.let { logWarning(TAG, "login failed", it) }
             _state.update {
-                if (result.isSuccess) {
+                if (failure == null) {
                     it.copy(submitting = false, loggedIn = true)
                 } else {
-                    // Deliberately generic for the user — a message that distinguished "wrong
-                    // password" from "no such account" would enumerate registered e-mails. The
-                    // real cause goes to logcat above.
+                    // Still deliberately vague about *which* credential is wrong — copy that
+                    // distinguished "wrong password" from "no such account" would let anyone
+                    // enumerate registered e-mails through this form. The backend takes the same
+                    // position, answering 401 "Invalid email or password" for both cases on
+                    // purpose. That reasoning is unchanged and lives on in `ErrorPresenter`.
+                    //
+                    // What the presenter fixes is the *other* half of the old sentence: it folded
+                    // a bad password together with the server being down ("Credenciais inválidas
+                    // ou servidor indisponível.", audit finding A6), and those two ask the user for
+                    // opposite things — retype vs wait. They are separate messages now. The real
+                    // cause still goes to logcat above.
                     it.copy(
                         submitting = false,
-                        errorMessage = "Credenciais inválidas ou servidor indisponível."
+                        errorMessage = failure.toUiMessage(ErrorContext.LOGIN)
                     )
                 }
             }

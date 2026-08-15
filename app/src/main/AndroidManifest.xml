@@ -9,6 +9,16 @@
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
         </intent>
+        <!--
+            The capture-detail screen hands its coordinates to the phone's own map app with a
+            `geo:` intent. Declared here so package-visibility filtering (API 30+) does not hide
+            every map app from this process. `CaptureLocationCard` still catches
+            ActivityNotFoundException, because a device with no map app at all is a real device.
+        -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
     </queries>
 
     <application

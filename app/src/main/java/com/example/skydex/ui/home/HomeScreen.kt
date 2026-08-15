@@ -6,27 +6,34 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,16 +48,33 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
+import com.example.skydex.ui.common.Tone
+import com.example.skydex.ui.common.UiMessage
 import com.example.skydex.ui.common.UiState
-import com.example.skydex.ui.skydex.rarityColor
+import com.example.skydex.ui.common.formatEventTime
+import com.example.skydex.ui.components.SkyDexEmptyState
+import com.example.skydex.ui.components.SkyDexNotice
+import com.example.skydex.ui.theme.SkyDexPalette
+import com.example.skydex.ui.theme.SkyDexSpacing
+import com.example.skydex.ui.theme.SkyDexTheme
+import com.example.skydex.ui.theme.alertColorFor
+import com.example.skydex.ui.theme.rarityColorFor
 import com.example.skydex.util.Coordinates
 import com.example.skydex.util.LOCATION_PERMISSIONS
+
+/**
+ * Shown instead of the ViewModel's message when the permission was actively denied — the screen is
+ * the only place that knows the difference between "no fix yet" and "the user said no".
+ */
+private val PermissionDeniedNotice = UiMessage(
+    title = "O SkyDex não pode ver onde você está",
+    body = "Ative a permissão de localização em Configurações para ver os eventos da sua região.",
+    tone = Tone.NOTICE,
+    actionLabel = "Abrir Configurações"
+)
 
 @Composable
 fun HomeScreen(
@@ -85,6 +109,7 @@ fun HomeScreen(
         state = state,
         onStartCapture = onStartCapture,
         onOpenMyCaptures = onOpenMyCaptures,
+        onDismissMessage = viewModel::dismissMessage,
         // Retry goes through the permission launcher rather than calling the ViewModel straight,
         // which is what the initial load does too. An already-granted permission makes `launch`
         // return immediately with no dialog, so the granted case costs nothing. This is also the
@@ -98,7 +123,18 @@ fun HomeScreen(
     )
 }
 
-/** The screen without its ViewModel, so the `@Preview`s below can render it. */
+/**
+ * The screen without its ViewModel, so the `@Preview`s below can render it.
+ *
+ * Layout note (audit finding M6): the primary CTA is **not** in the scrolling list. It is an
+ * extended FAB pinned to the bottom of this `Box`, so "Registrar Novo Evento" stays under the
+ * thumb at every scroll position instead of being the second row of a list that scrolls away.
+ * The list reserves [SkyDexSpacing.listBottomPadding] at the bottom so the last card clears it —
+ * the FAB overlaps nothing, it only floats above the empty tail of the scroll.
+ *
+ * There is no in-screen title any more: the route's `TopAppBar` owns it (finding A8), and a second
+ * copy inside the list would both duplicate it and scroll out of sight.
+ */
 @Composable
 private fun HomeContent(
     state: UiState<HomeData>,
@@ -106,194 +142,241 @@ private fun HomeContent(
     onOpenMyCaptures: () -> Unit,
     onRetry: () -> Unit,
     permissionDenied: Boolean = false,
+    onDismissMessage: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    LazyColumn(
+    Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFFF3F4F6))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp)
+            .background(MaterialTheme.colorScheme.background)
     ) {
-        item {
-            Text(
-                text = "Eventos Próximos",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.Black
-            )
-        }
-
-        item { MainActionCard(onClick = onStartCapture) }
-
-        item {
-            TextButton(onClick = onOpenMyCaptures) { Text("Meus Registros") }
-        }
-
-        when (state) {
-            is UiState.Loading -> item {
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = Color(0xFF0284C7))
-                }
-            }
-
-            // The message alone would be a dead end. Nothing else on this screen triggers a load —
-            // `loadForCurrentPosition` has exactly one caller, the permission-launcher callback —
-            // so without this button a user who opened the app offline would have no way back once
-            // connectivity returned, short of killing the process. Matches CaptureScreen's copy.
-            //
-            // A denied permission gets an extra affordance rather than a swapped one. Two different
-            // users land here with `permissionDenied` true:
-            // - one has NOT fixed it in Settings yet — for them "Tentar novamente" just re-reports
-            //   the same denial (Android will not show the system dialog again after a denial), so
-            //   they need "Abrir Configurações" to actually do anything about it;
-            // - one HAS already fixed it in Settings and is looking at a stale error — for them
-            //   "Abrir Configurações" is a no-op detour, and "Tentar novamente" (`onRetry`, the same
-            //   permission launcher the non-denied branch uses) is what re-checks and clears
-            //   `permissionDenied`.
-            // Neither button can tell which user is looking at the screen, so both are offered.
-            is UiState.Error -> item {
-                val context = LocalContext.current
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = if (permissionDenied) {
-                            "Permissão de localização negada. Ative em Configurações para continuar."
-                        } else {
-                            state.message
-                        },
-                        color = Color.Red,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    if (permissionDenied) {
-                        TextButton(
-                            onClick = {
-                                val intent = Intent(
-                                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                    Uri.fromParts("package", context.packageName, null)
-                                )
-                                context.startActivity(intent)
-                            }
-                        ) {
-                            Text("Abrir Configurações")
-                        }
-                    }
-                    TextButton(onClick = onRetry) { Text("Tentar novamente") }
-                }
-            }
-
-            is UiState.Success -> if (state.data.phenomena.isEmpty()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = SkyDexSpacing.screenPadding,
+                end = SkyDexSpacing.screenPadding,
+                top = SkyDexSpacing.lg,
+                // Clears the pinned FAB below. Without it the CTA would sit on top of the last
+                // phenomenon card once the list is scrolled to the end.
+                bottom = SkyDexSpacing.listBottomPadding
+            ),
+            verticalArrangement = Arrangement.spacedBy(SkyDexSpacing.lg)
+        ) {
+            // Audit finding A4. Above everything, including the secondary action, because a failure
+            // the user has to hunt for is a failure they will not find — and *below* nothing, since
+            // the list already holds the phenomena that a destructive `when` would have deleted.
+            // Same permission-aware presentation as the empty case: see [LocationNotice].
+            if (state is UiState.Success && state.staleMessage != null) {
                 item {
-                    Text(
-                        text = "Nenhum evento severo detectado na sua região.",
-                        color = Color.Gray,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
+                    LocationNotice(
+                        message = state.staleMessage,
+                        permissionDenied = permissionDenied,
+                        onRetry = onRetry,
+                        onDismiss = onDismissMessage
                     )
                 }
-            } else {
-                items(state.data.phenomena) { phenomenon -> PhenomenonCard(phenomenon) }
             }
+
+            item { MyCapturesAction(onClick = onOpenMyCaptures) }
+
+            when (state) {
+                is UiState.Loading -> item {
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = SkyDexPalette.colors.accentDecorative)
+                    }
+                }
+
+                // The message alone would be a dead end. Nothing else on this screen triggers a load —
+                // `loadForCurrentPosition` has exactly one caller, the permission-launcher callback —
+                // so without this button a user who opened the app offline would have no way back once
+                // connectivity returned, short of killing the process. Matches CaptureScreen's copy.
+                //
+                // A denied permission gets an extra affordance rather than a swapped one. Two different
+                // users land here with `permissionDenied` true:
+                // - one has NOT fixed it in Settings yet — for them "Tentar novamente" just re-reports
+                //   the same denial (Android will not show the system dialog again after a denial), so
+                //   they need "Abrir Configurações" to actually do anything about it;
+                // - one HAS already fixed it in Settings and is looking at a stale error — for them
+                //   "Abrir Configurações" is a no-op detour, and "Tentar novamente" (`onRetry`, the same
+                //   permission launcher the non-denied branch uses) is what re-checks and clears
+                //   `permissionDenied`.
+                // Neither button can tell which user is looking at the screen, so both are offered.
+                is UiState.Error -> item {
+                    LocationNotice(
+                        message = state.message,
+                        permissionDenied = permissionDenied,
+                        onRetry = onRetry
+                    )
+                }
+
+                // The last empty state that was still a bare grey sentence (audit finding A10).
+                //
+                // Unlike every other empty state in the app, this one is GOOD news: an empty list
+                // here means no severe weather is heading for the user. So it gets the sun, not the
+                // camera; "tranquilo", not "ainda não"; and deliberately **no button** — a CTA would
+                // frame a calm sky as something to fix, and "Tentar novamente" would be flatly
+                // wrong, since the request succeeded. The capture FAB is already pinned below for
+                // anyone who wants to shoot the clear sky anyway.
+                is UiState.Success -> if (state.data.phenomena.isEmpty()) {
+                    item {
+                        SkyDexEmptyState(
+                            icon = Icons.Default.WbSunny,
+                            title = "Céu tranquilo por aqui",
+                            body = "Nenhum evento severo perto de você agora. " +
+                                "Assim que algo aparecer na sua região, ele entra nesta lista."
+                        )
+                    }
+                } else {
+                    items(state.data.phenomena) { phenomenon -> PhenomenonCard(phenomenon) }
+                }
+            }
+        }
+
+        // The one thing the whole app exists for, kept permanently within thumb reach (finding M6).
+        // Filled with `primary` — the accessible accent — because white sits on top of it; the
+        // brighter decorative accent measures 4.10:1 under white and would fail AA.
+        ExtendedFloatingActionButton(
+            onClick = onStartCapture,
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(SkyDexSpacing.lg)
+        ) {
+            Icon(imageVector = Icons.Default.AddAPhoto, contentDescription = null)
+            Spacer(Modifier.width(SkyDexSpacing.sm))
+            Text(
+                text = "Registrar Novo Evento",
+                style = MaterialTheme.typography.titleMedium
+            )
         }
     }
 }
 
 /**
- * The screen's primary call to action: everything else on Home is informational, this is the one
- * thing the user came to the app to do. Kept visually distinct — filled with the brand accent
- * rather than the white cards below — so it reads as the entry point into the capture flow.
+ * The one place this screen presents a location failure, used by both cases: the first load, where
+ * there is nothing else on screen, and a refresh that failed over a list that is still there
+ * (finding A4). Extracted so the permission reasoning below is stated once and cannot drift between
+ * the two — a user who revokes the permission after a successful load must be told about Settings on
+ * the banner for exactly the reasons it must be told on the empty screen.
+ *
+ * @param onDismiss non-null only in the stale-refresh case. The empty screen's notice is deliberately
+ *   not dismissible: closing it would leave nothing at all, which is the dead end finding B3 named.
  */
 @Composable
-private fun MainActionCard(onClick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF0284C7)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+private fun LocationNotice(
+    message: UiMessage,
+    permissionDenied: Boolean,
+    onRetry: () -> Unit,
+    onDismiss: (() -> Unit)? = null
+) {
+    val context = LocalContext.current
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(
-            modifier = Modifier
-                .padding(20.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.AddAPhoto,
-                contentDescription = null,
-                tint = Color.White
-            )
-            Text(
-                text = "Registrar Novo Evento",
-                color = Color.White,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold
-            )
+        // A denied permission is an INSTRUCTION, not a failure. The audit (A3) found
+        // this exact sentence painted red — the app telling a user who did nothing
+        // wrong that something broke. It is a notice now, like everything else.
+        SkyDexNotice(
+            message = if (permissionDenied) PermissionDeniedNotice else message,
+            onAction = if (permissionDenied) {
+                {
+                    val intent = Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", context.packageName, null)
+                    )
+                    context.startActivity(intent)
+                }
+            } else {
+                onRetry
+            },
+            onDismiss = onDismiss
+        )
+        // The denied branch keeps BOTH affordances — the notice carries "Abrir
+        // Configurações" and this keeps the retry. The reasoning above is unchanged:
+        // one user has not fixed it in Settings yet and needs the intent; another
+        // already has and is looking at a stale error, for whom only re-running the
+        // permission launcher clears `permissionDenied`. Neither button can tell which
+        // user is looking, so both are offered.
+        if (permissionDenied) {
+            TextButton(onClick = onRetry) { Text("Tentar novamente") }
         }
+    }
+}
+
+/**
+ * "Meus Registros" as a real secondary action instead of the orphan `TextButton` the audit found
+ * floating between the CTA and the list (finding M7): full card width so it lines up with the
+ * phenomenon cards below it, an icon that says what it opens, and a chevron that says it navigates.
+ * It reads as belonging to the list it sits above rather than as leftover chrome.
+ */
+@Composable
+private fun MyCapturesAction(onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Icon(
+            imageVector = Icons.Default.PhotoLibrary,
+            contentDescription = null,
+            modifier = Modifier.size(SkyDexSpacing.xl)
+        )
+        Spacer(Modifier.width(SkyDexSpacing.md))
+        Text(
+            text = "Meus Registros",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f)
+        )
+        Icon(
+            imageVector = Icons.Default.ChevronRight,
+            contentDescription = null,
+            modifier = Modifier.size(SkyDexSpacing.xl)
+        )
     }
 }
 
 @Composable
 private fun PhenomenonCard(phenomenon: NearbyPhenomenonResponse) {
-    val alertColor = when (phenomenon.alertLevel) {
-        "Perigo Extremo!" -> Color(0xFFB91C1C)
-        "Perigo" -> Color(0xFFEF4444)
-        "Atenção" -> Color(0xFFF59E0B)
-        "Interessante" -> Color(0xFF3B82F6)
-        else -> Color(0xFF10B981)
-    }
+    // Was a five-branch `when` of raw hexes. `alertColorFor` matches case-insensitively by prefix
+    // and falls through to Calm on anything unknown, so the same five levels land on the same
+    // severities — now with a dark-theme variant each.
+    val alertColor = alertColorFor(phenomenon.alertLevel)
+    val rarityTint = rarityColorFor(phenomenon.rarity)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        // Elevation, not spacing — the 8-point grid in `SkyDexSpacing` does not govern shadows.
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
             modifier = Modifier
-                .padding(16.dp)
+                .padding(SkyDexSpacing.lg)
                 .fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = phenomenon.phenomenonName, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(
+                    text = phenomenon.phenomenonName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = SkyDexPalette.colors.textPrimary
+                )
 
                 val temperature = phenomenon.temperatureCelsius?.let { "$it °C" } ?: "Temp. Indisponível"
-                Text(text = temperature, color = Color.Gray, fontSize = 14.sp)
+                Text(
+                    text = temperature,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SkyDexPalette.colors.textSecondary
+                )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(SkyDexSpacing.sm))
 
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Surface(
-                        color = alertColor.copy(alpha = 0.1f),
-                        shape = MaterialTheme.shapes.small
-                    ) {
-                        Text(
-                            text = phenomenon.alertLevel.uppercase(),
-                            color = alertColor,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-
-                    val rarityTint = rarityColor(phenomenon.rarity)
-                    Surface(
-                        color = rarityTint.copy(alpha = 0.1f),
-                        shape = MaterialTheme.shapes.small
-                    ) {
-                        Text(
-                            text = phenomenon.rarity,
-                            color = rarityTint,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
+                Row(horizontalArrangement = Arrangement.spacedBy(SkyDexSpacing.sm)) {
+                    MetadataBadge(text = phenomenon.alertLevel.uppercase(), tint = alertColor)
+                    MetadataBadge(text = phenomenon.rarity, tint = rarityTint)
                 }
             }
 
@@ -304,19 +387,40 @@ private fun PhenomenonCard(phenomenon: NearbyPhenomenonResponse) {
                     } else {
                         Icons.Default.LocationOn
                     },
-                    contentDescription = "Alerta",
+                    // The alert level is spelled out in the badge two lines to the left, so the
+                    // icon is a repeat of information already in text (finding M9).
+                    contentDescription = null,
                     tint = alertColor
                 )
                 Text(
-                    text = phenomenon.time.substringAfter("T"),
-                    fontSize = 14.sp,
-                    color = Color.Gray,
-                    fontWeight = FontWeight.Bold
+                    text = formatEventTime(phenomenon.time),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = SkyDexPalette.colors.textSecondary
                 )
             }
         }
     }
 }
+
+/** The alert-level / rarity pill. Same shape for both so they read as one row of metadata. */
+@Composable
+private fun MetadataBadge(text: String, tint: Color) {
+    Surface(color = tint.copy(alpha = 0.1f), shape = MaterialTheme.shapes.extraSmall) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            color = tint,
+            modifier = Modifier.padding(
+                horizontal = SkyDexSpacing.sm,
+                vertical = SkyDexSpacing.xs
+            )
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Previews — light and dark (audit finding B4)
+// ---------------------------------------------------------------------------------------------
 
 private val previewPhenomena = listOf(
     NearbyPhenomenonResponse(
@@ -333,30 +437,95 @@ private val previewPhenomena = listOf(
 
 private val previewCoordinates = Coordinates(-23.55, -46.63)
 
-@Preview(showBackground = true)
+private val previewErrorMessage = UiMessage(
+    title = "Sem conexão",
+    body = "Verifique sua internet e tente de novo.",
+    tone = Tone.NOTICE,
+    actionLabel = "Tentar de novo"
+)
+
+@Composable
+private fun HomePreviewHost(darkTheme: Boolean, state: UiState<HomeData>) {
+    SkyDexTheme(darkTheme = darkTheme) {
+        HomeContent(state = state, onStartCapture = {}, onOpenMyCaptures = {}, onRetry = {})
+    }
+}
+
+@Preview(showBackground = true, name = "Home — lista, claro")
 @Composable
 private fun HomeContentPreview() {
-    HomeContent(
-        state = UiState.Success(HomeData(previewCoordinates, previewPhenomena)),
-        onStartCapture = {},
-        onOpenMyCaptures = {},
-        onRetry = {}
+    HomePreviewHost(
+        darkTheme = false,
+        state = UiState.Success(HomeData(previewCoordinates, previewPhenomena))
     )
 }
 
-@Preview(showBackground = true, name = "Eventos próximos - carregando")
+@Preview(showBackground = true, name = "Home — lista, escuro", backgroundColor = 0xFF0B1220)
 @Composable
-private fun HomeContentLoadingPreview() {
-    HomeContent(state = UiState.Loading, onStartCapture = {}, onOpenMyCaptures = {}, onRetry = {})
+private fun HomeContentDarkPreview() {
+    HomePreviewHost(
+        darkTheme = true,
+        state = UiState.Success(HomeData(previewCoordinates, previewPhenomena))
+    )
 }
 
-@Preview(showBackground = true, name = "Eventos próximos - erro")
+@Preview(showBackground = true, name = "Home — vazio, claro")
+@Composable
+private fun HomeContentEmptyPreview() {
+    HomePreviewHost(
+        darkTheme = false,
+        state = UiState.Success(HomeData(previewCoordinates, emptyList()))
+    )
+}
+
+@Preview(showBackground = true, name = "Home — carregando, claro")
+@Composable
+private fun HomeContentLoadingPreview() {
+    HomePreviewHost(darkTheme = false, state = UiState.Loading)
+}
+
+@Preview(showBackground = true, name = "Home — carregando, escuro", backgroundColor = 0xFF0B1220)
+@Composable
+private fun HomeContentLoadingDarkPreview() {
+    HomePreviewHost(darkTheme = true, state = UiState.Loading)
+}
+
+@Preview(showBackground = true, name = "Home — erro, claro")
 @Composable
 private fun HomeContentErrorPreview() {
-    HomeContent(
-        state = UiState.Error("Não foi possível carregar os eventos próximos."),
-        onStartCapture = {},
-        onOpenMyCaptures = {},
-        onRetry = {}
+    HomePreviewHost(darkTheme = false, state = UiState.Error(previewErrorMessage))
+}
+
+@Preview(showBackground = true, name = "Home — erro, escuro", backgroundColor = 0xFF0B1220)
+@Composable
+private fun HomeContentErrorDarkPreview() {
+    HomePreviewHost(darkTheme = true, state = UiState.Error(previewErrorMessage))
+}
+
+/**
+ * Audit finding A4, against the two previews above: the same failure, but the phenomena the user was
+ * already reading are still on the list and the notice sits over them instead of taking their place.
+ */
+@Preview(showBackground = true, name = "Home — falha ao atualizar, claro")
+@Composable
+private fun HomeContentStalePreview() {
+    HomePreviewHost(
+        darkTheme = false,
+        state = UiState.Success(
+            HomeData(previewCoordinates, previewPhenomena),
+            staleMessage = previewErrorMessage
+        )
+    )
+}
+
+@Preview(showBackground = true, name = "Home — falha ao atualizar, escuro", backgroundColor = 0xFF0B1220)
+@Composable
+private fun HomeContentStaleDarkPreview() {
+    HomePreviewHost(
+        darkTheme = true,
+        state = UiState.Success(
+            HomeData(previewCoordinates, previewPhenomena),
+            staleMessage = previewErrorMessage
+        )
     )
 }

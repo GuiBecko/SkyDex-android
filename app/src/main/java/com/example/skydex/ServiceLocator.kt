@@ -10,6 +10,7 @@ import com.example.skydex.data.repository.ProfileRepository
 import com.example.skydex.data.repository.SkyDexRepository
 import com.example.skydex.data.repository.SocialRepository
 import com.example.skydex.data.session.SessionStore
+import com.example.skydex.ui.detail.CaptureRegistry
 import com.example.skydex.util.DeviceLocation
 
 /**
@@ -54,4 +55,15 @@ object ServiceLocator {
     val profileRepository: ProfileRepository by lazy { ProfileRepository(api) }
 
     val deviceLocation: DeviceLocation by lazy { DeviceLocation(requireContext()) }
+
+    /**
+     * The in-memory handoff between a capture list and the capture-detail screen.
+     *
+     * The odd one out in this container: it is not a repository and it talks to nothing. It exists
+     * because `SkyDexApi` has no single-capture endpoint, so the detail screen resolves the object
+     * the list already loaded instead of fetching it — see [CaptureRegistry] for the full reasoning
+     * and for what happens after process death. It lives here for exactly one property: **process
+     * lifetime**, which is the same scope the registry's contract is written against.
+     */
+    val captureRegistry: CaptureRegistry by lazy { CaptureRegistry() }
 }

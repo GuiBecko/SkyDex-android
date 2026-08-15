@@ -1,6 +1,7 @@
 package com.example.skydex.ui.auth
 
 import com.example.skydex.ui.common.RecordingLogWarning
+import com.example.skydex.ui.common.Tone
 import com.example.skydex.ui.common.noLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -15,6 +16,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
+import retrofit2.HttpException
+import retrofit2.Response
 import java.io.IOException
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -65,8 +70,8 @@ class RegisterViewModelTest {
 
         assertFalse(viewModel.state.value.registered)
         assertEquals(
-            "Não foi possível registrar. O e-mail já existe?",
-            viewModel.state.value.errorMessage
+            "Sem conexão",
+            viewModel.state.value.errorMessage?.title
         )
 
         val warning = logWarning.warnings.single()
@@ -74,6 +79,41 @@ class RegisterViewModelTest {
         assertFalse(
             "the e-mail is PII and must not reach logcat",
             warning.message.contains("pilot@skydex.com")
+        )
+    }
+
+    /**
+     * The audit's sharpest example of the app guessing at information it already had (finding A6):
+     * the server replies `409 "Email already registered"` and the screen asked the user
+     * *"O e-mail já existe?"*. It says so now — and, being a 409, it says it without ever echoing
+     * the English.
+     */
+    @Test
+    fun `a taken e-mail is stated, not guessed at`() = runTest(dispatcher) {
+        val repository = FakeAuthRepository(
+            result = Result.failure(
+                HttpException(
+                    Response.error<Any>(
+                        409,
+                        """{"error":"Email already registered"}"""
+                            .toResponseBody("application/json".toMediaType())
+                    )
+                )
+            )
+        )
+        val viewModel = RegisterViewModel(repository, noLogging)
+
+        viewModel.fillIn()
+        viewModel.submit()
+        advanceUntilIdle()
+
+        val message = viewModel.state.value.errorMessage!!
+        assertEquals("Este e-mail já tem uma conta", message.title)
+        assertEquals("Faça login ou use outro e-mail.", message.body)
+        assertEquals(Tone.NOTICE, message.tone)
+        assertFalse(
+            "the copy must state the problem, not ask about it",
+            message.title.contains("?") || message.body.contains("?")
         )
     }
 
@@ -87,7 +127,7 @@ class RegisterViewModelTest {
         advanceUntilIdle()
 
         assertEquals(0, repository.registerCalls)
-        assertEquals("Preencha todos os campos.", viewModel.state.value.errorMessage)
+        assertEquals("Preencha todos os campos", viewModel.state.value.errorMessage?.title)
     }
 
     /**
@@ -106,10 +146,8 @@ class RegisterViewModelTest {
 
         assertEquals(0, repository.registerCalls)
         assertFalse(viewModel.state.value.registered)
-        assertEquals(
-            "A senha deve ter no mínimo 8 caracteres.",
-            viewModel.state.value.errorMessage
-        )
+        assertEquals("A senha está curta", viewModel.state.value.errorMessage?.title)
+        assertEquals("Use no mínimo 8 caracteres.", viewModel.state.value.errorMessage?.body)
     }
 
     @Test

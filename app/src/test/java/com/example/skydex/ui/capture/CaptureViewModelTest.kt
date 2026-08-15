@@ -1,7 +1,14 @@
 package com.example.skydex.ui.capture
 
+import androidx.lifecycle.ViewModelStore
+import com.example.skydex.data.remote.dto.BadgeResponse
 import com.example.skydex.data.remote.dto.CreateWeatherEventRequest
+import com.example.skydex.data.remote.dto.ProfileResponse
+import com.example.skydex.data.remote.dto.UserSummary
 import com.example.skydex.data.remote.dto.WeatherEventResponse
+import com.example.skydex.ui.common.LogWarning
+import com.example.skydex.ui.common.RecordingLogWarning
+import com.example.skydex.ui.common.noLogging
 import com.example.skydex.util.Coordinates
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -92,7 +99,7 @@ class CaptureViewModelTest {
         viewModel.submit()
         advanceUntilIdle()
 
-        assertEquals("Preencha o título e a descrição.", viewModel.state.value.errorMessage)
+        assertEquals("Falta o título e a descrição", viewModel.state.value.errorMessage?.title)
         assertEquals(0, gateway.uploadedFiles.size)
         assertEquals(0, gateway.createdRequests.size)
     }
@@ -115,7 +122,7 @@ class CaptureViewModelTest {
         viewModel.submit()
         advanceUntilIdle()
 
-        assertEquals("Preencha o título e a descrição.", viewModel.state.value.errorMessage)
+        assertEquals("Falta o título e a descrição", viewModel.state.value.errorMessage?.title)
         assertEquals(0, gateway.uploadedFiles.size)
         assertEquals(0, gateway.createdRequests.size)
     }
@@ -132,7 +139,7 @@ class CaptureViewModelTest {
         viewModel.submit()
         advanceUntilIdle()
 
-        assertEquals("Tire uma foto do fenômeno antes de salvar.", viewModel.state.value.errorMessage)
+        assertEquals("Falta a foto", viewModel.state.value.errorMessage?.title)
         assertEquals(0, gateway.createdRequests.size)
     }
 
@@ -149,10 +156,7 @@ class CaptureViewModelTest {
         viewModel.submit()
         advanceUntilIdle()
 
-        assertEquals(
-            "Não foi possível obter sua localização. Ative o GPS e tente de novo.",
-            viewModel.state.value.errorMessage
-        )
+        assertEquals("Não achamos onde você está", viewModel.state.value.errorMessage?.title)
         assertEquals(0, gateway.createdRequests.size)
     }
 
@@ -249,7 +253,7 @@ class CaptureViewModelTest {
 
         viewModel.submit()
         advanceUntilIdle()
-        assertEquals("Falha ao salvar o registro. Tente de novo.", viewModel.state.value.errorMessage)
+        assertEquals("Sem conexão", viewModel.state.value.errorMessage?.title)
 
         viewModel.submit()
         advanceUntilIdle()
@@ -263,12 +267,14 @@ class CaptureViewModelTest {
     /**
      * The backend designed five distinct, actionable 400 messages across Tasks 12b and 12c —
      * "This photo has already been used for a capture", "Photo has expired; take a new one", and
-     * so on — and the client threw all of them away in favour of one blanket string. Worse, that
-     * string told the user to retry, which for most of those five is the one thing that cannot
-     * work.
+     * so on — and each one implies a different next step, so one blanket string was wrong for all
+     * of them: it told the user to retry, which for most of the five cannot work.
+     *
+     * The client used to fix that by forwarding the backend's own sentence — which put English in
+     * a pt-BR app (audit finding B1). It keeps the distinction and answers in our words.
      */
     @Test
-    fun `a 400 surfaces the backend's own message instead of the generic one`() = runTest(dispatcher) {
+    fun `a 400 becomes our own pt-BR message, never the backend's English`() = runTest(dispatcher) {
         val gateway = FakeCaptureGateway(
             createFailure = httpError(400, """{"error":"Photo has expired; take a new one"}""")
         )
@@ -277,7 +283,35 @@ class CaptureViewModelTest {
         viewModel.submit()
         advanceUntilIdle()
 
-        assertEquals("Photo has expired; take a new one", viewModel.state.value.errorMessage)
+        val message = viewModel.state.value.errorMessage!!
+        assertEquals("Essa foto expirou", message.title)
+        assertEquals("Tire uma nova foto para registrar.", message.body)
+        assertFalse(
+            "the backend's English must never reach the screen",
+            "${message.title} ${message.body}".contains("Photo has expired")
+        )
+    }
+
+    /**
+     * The leak the audit named explicitly: the server appends the enum to the message, so
+     * forwarding it put `THUNDERSTORM` — an internal domain constant — in front of the user.
+     */
+    @Test
+    fun `an unknown phenomenon never leaks the enum name`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway(
+            createFailure = httpError(400, """{"error":"Unknown phenomenon: THUNDERSTORM"}""")
+        )
+        val viewModel = readyToSubmit(gateway)
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        val message = viewModel.state.value.errorMessage!!
+        assertEquals("Não reconhecemos esse fenômeno", message.title)
+        assertFalse(
+            "the domain enum must never reach the screen",
+            "${message.title} ${message.body}".contains("THUNDERSTORM")
+        )
     }
 
     /**
@@ -332,8 +366,8 @@ class CaptureViewModelTest {
         advanceUntilIdle()
 
         assertEquals(
-            "Falha ao salvar o registro. Tente de novo.",
-            viewModel.state.value.errorMessage
+            "Não deu para salvar esse registro",
+            viewModel.state.value.errorMessage?.title
         )
     }
 
@@ -347,8 +381,8 @@ class CaptureViewModelTest {
         advanceUntilIdle()
 
         assertEquals(
-            "Falha ao salvar o registro. Tente de novo.",
-            viewModel.state.value.errorMessage
+            "Não deu para salvar esse registro",
+            viewModel.state.value.errorMessage?.title
         )
     }
 
@@ -365,10 +399,7 @@ class CaptureViewModelTest {
         viewModel.submit()
         advanceUntilIdle()
 
-        assertEquals(
-            "Falha ao salvar o registro. Tente de novo.",
-            viewModel.state.value.errorMessage
-        )
+        assertEquals("Sem conexão", viewModel.state.value.errorMessage?.title)
         assertEquals("/api/photos/uploaded.jpg", viewModel.state.value.uploadedPhotoUrl)
     }
 
@@ -488,8 +519,8 @@ class CaptureViewModelTest {
         assertFalse(viewModel.state.value.saved)
         assertEquals(0, gateway.createdRequests.size)
         assertEquals(
-            "A foto foi trocada durante o envio. Toque em Salvar de novo.",
-            viewModel.state.value.errorMessage
+            "A foto mudou durante o envio",
+            viewModel.state.value.errorMessage?.title
         )
 
         viewModel.submit()
@@ -544,7 +575,7 @@ class CaptureViewModelTest {
         viewModel.submit()
         advanceUntilIdle()
 
-        assertEquals("Escolha qual fenômeno você registrou.", viewModel.state.value.errorMessage)
+        assertEquals("Falta escolher o fenômeno", viewModel.state.value.errorMessage?.title)
         assertEquals(0, gateway.createdRequests.size)
     }
 
@@ -589,17 +620,413 @@ class CaptureViewModelTest {
         assertTrue(gateway.createdRequests.single().locationIsMock)
     }
 
-    /** A ready-to-submit ViewModel: located, titled, described, phenomenon chosen, photo taken. */
-    private fun TestScope.readyToSubmit(gateway: CaptureGateway): CaptureViewModel {
-        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0346, -51.2177) }
-        viewModel.refreshLocation()
+    // -----------------------------------------------------------------------------------------
+    // The reward moment (audit finding B6)
+    // -----------------------------------------------------------------------------------------
+
+    /**
+     * The whole point of B6: the capture response used to be discarded and the screen navigated
+     * away on `saved` alone, so the XP only ever surfaced later as a number in a list.
+     *
+     * Every field asserted here comes off `WeatherEventResponse` and nothing else — no second
+     * request has happened yet at this point, which is what makes the celebration immediate.
+     */
+    @Test
+    fun `a confirmed capture produces a reward straight from the capture response`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway(rarity = "LEGENDARY")
+        val viewModel = readyToSubmit(gateway)
+
+        viewModel.submit()
         advanceUntilIdle()
+
+        val reward = viewModel.state.value.reward!!
+        assertTrue(reward.confirmed)
+        assertEquals(400, reward.xpAwarded)
+        assertEquals("LEGENDARY", reward.rarity)
+        assertEquals("Tempestade com Trovões", reward.phenomenonName)
+        // No profile reader was wired, so there is nothing to enrich it with — and the reward is
+        // complete and showable regardless.
+        assertNull(reward.bonus)
+        // `saved` keeps its old meaning; it is the re-submit guard, not the overlay's trigger.
+        assertTrue(viewModel.state.value.saved)
+    }
+
+    /**
+     * The branch that must NOT celebrate.
+     *
+     * The backend cross-checks the photo's phenomenon against the region's real weather, and an
+     * UNCONFIRMED verdict awards zero — but it is not an accusation either (an Open-Meteo outage
+     * lands here too), and the row and the photo are kept. So the reward still exists, still offers
+     * both ways forward, and simply carries no XP for the overlay to count up to.
+     */
+    @Test
+    fun `an unconfirmed capture yields a reward with no XP`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway(confirmed = false)
+        val viewModel = readyToSubmit(gateway)
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        val reward = viewModel.state.value.reward!!
+        assertFalse(reward.confirmed)
+        assertEquals(0, reward.xpAwarded)
+        // Still a saved capture: the user has a row and a photo, and the flow must let them out.
+        assertTrue(viewModel.state.value.saved)
+        assertNull(viewModel.state.value.errorMessage)
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // The silent discard of an unconfirmed capture
+    // -----------------------------------------------------------------------------------------
+
+    /**
+     * An unconfirmed capture must not stay on the server.
+     *
+     * The backend stores every capture and only *then* reports its verdict, so an UNCONFIRMED one
+     * exists as a row worth no XP, counting towards no species, that the backend will never
+     * re-validate. Leaving it would put a permanent, unexplainable entry in Meus Registros next to
+     * the captures the user actually earned, so the client takes it back immediately.
+     *
+     * Asserted on the id off the create response, not on a count alone: deleting *something* is not
+     * the requirement, deleting the capture that was just refused is.
+     */
+    @Test
+    fun `an unconfirmed capture is deleted immediately`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway(confirmed = false)
+        val viewModel = readyToSubmit(gateway)
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf("00000000-0000-0000-0000-000000000001"),
+            gateway.deletedIds
+        )
+    }
+
+    /**
+     * The other half of the rule, and the one that would be catastrophic to get wrong: a CONFIRMED
+     * capture is the thing the whole app exists to produce. A discard that fired on the wrong branch
+     * would delete the user's collection one entry at a time, silently, with a celebration on screen
+     * while it happened.
+     */
+    @Test
+    fun `a confirmed capture is never deleted`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway(confirmed = true)
+        val viewModel = readyToSubmit(gateway)
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertTrue(
+            "a confirmed capture must survive",
+            gateway.deletedIds.isEmpty()
+        )
+    }
+
+    /**
+     * Silent means silent. The discard is a request the user never made, about a record they were
+     * never shown, and there is nothing they could do about either outcome — so neither its success
+     * nor its failure may reach the screen.
+     *
+     * The failure path is the strict one: the DELETE is refused, the record survives on the server
+     * (the accepted degradation), and the reward the user is looking at must be untouched — no
+     * error notice, no lost XP line, no state change at all. The cause goes to `logWarning` and
+     * nowhere else.
+     */
+    @Test
+    fun `a failed discard changes nothing the user can see`() = runTest(dispatcher) {
+        val logWarning = RecordingLogWarning()
+        val gateway = FakeCaptureGateway(confirmed = false).apply {
+            deleteFailure = IOException("delete rejected")
+        }
+        val viewModel = readyToSubmit(gateway, logWarning = logWarning)
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        val state = viewModel.state.value
+        assertNull("a failed discard must not surface an error", state.errorMessage)
+        assertTrue("the capture really was stored; the guard stays latched", state.saved)
+        assertNotNull("the reward moment must survive a failed discard", state.reward)
+        assertFalse(state.reward!!.confirmed)
+        assertEquals(0, state.reward!!.xpAwarded)
+        assertFalse("no spinner may be left behind", state.submitting)
+
+        // It was attempted exactly once — no retry loop behind a screen the user cannot act on.
+        assertEquals(1, gateway.deletedIds.size)
+
+        // And the cause is not lost, it is just not the user's problem.
+        val warning = logWarning.warnings.single()
+        assertEquals("delete rejected", warning.cause.message)
+        // `LogWarning`'s contract: name the operation, never its subject. An id in logcat is PII
+        // adjacent and adds nothing a throwable does not already say.
+        assertFalse(
+            "the capture id must not reach logcat",
+            warning.message.contains("00000000-0000-0000-0000-000000000001")
+        )
+    }
+
+    /**
+     * The discard must not stand between the user and the overlay. It is launched after the state
+     * update that puts the reward on screen, so even a DELETE that never answers leaves the peak
+     * moment fully rendered — the same non-blocking contract the profile enrichment has.
+     */
+    @Test
+    fun `the reward is on screen before the discard answers`() = runTest(dispatcher) {
+        val gateway = GatedDeleteGateway(FakeCaptureGateway(confirmed = false))
+        val viewModel = readyToSubmit(gateway)
+
+        viewModel.submit()
+        advanceUntilIdle() // the delete is now parked inside the gateway
+
+        val reward = viewModel.state.value.reward
+        assertNotNull("the celebration must not wait on the discard", reward)
+        assertFalse(reward!!.confirmed)
+        assertNull(viewModel.state.value.errorMessage)
+
+        gateway.releaseDelete()
+        advanceUntilIdle()
+
+        assertEquals(1, gateway.deletedIds.size)
+    }
+
+    /**
+     * The coroutine-scope decision, made testable.
+     *
+     * The discard fires at the exact instant the screen becomes dismissable: the overlay is up, and
+     * "Ver meus registros" (or the back gesture) pops the Capture destination, clearing this
+     * ViewModel and cancelling `viewModelScope`. A plain `viewModelScope.launch` would therefore
+     * drop the DELETE precisely on the fast tap — the most likely case, not an edge one.
+     *
+     * `CaptureViewModel.discardUnconfirmed` detaches the job with [kotlinx.coroutines.NonCancellable]
+     * so the request outlives the screen. This is that guarantee, driven through the real
+     * [ViewModelStore.clear] rather than a stand-in, because `ViewModel.clear()` is what actually
+     * cancels the scope on device.
+     */
+    @Test
+    fun `the discard survives the user leaving the screen`() = runTest(dispatcher) {
+        val gateway = GatedDeleteGateway(FakeCaptureGateway(confirmed = false))
+        val viewModel = readyToSubmit(gateway)
+
+        viewModel.submit()
+        advanceUntilIdle() // the delete is in flight, parked inside the gateway
+
+        // Navigating away: the Capture destination is popped and its ViewModel cleared.
+        ViewModelStore().apply { put("capture", viewModel) }.clear()
+
+        gateway.releaseDelete()
+        advanceUntilIdle()
+
+        assertEquals(
+            "the record must still be taken back after the screen is gone",
+            listOf("00000000-0000-0000-0000-000000000001"),
+            gateway.deletedIds
+        )
+    }
+
+    /**
+     * The level-up line, and the only way it may ever be produced: a profile read taken before the
+     * capture, diffed against one taken after. `POST /api/captures` returns no level and no badge
+     * list, so a single after-the-fact read cannot tell "level 3" from "level 3 already".
+     */
+    @Test
+    fun `a verified level-up and a new badge fill in the reward bonus`() = runTest(dispatcher) {
+        val profiles = FakeProfileReader(
+            before = profile(level = 2, unlocked = setOf("FIRST_CAPTURE")),
+            after = profile(level = 3, unlocked = setOf("FIRST_CAPTURE", "THREE_CAPTURES"))
+        )
+        val viewModel = readyToSubmit(FakeCaptureGateway(), profiles)
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        val bonus = viewModel.state.value.reward!!.bonus!!
+        assertEquals(3, bonus.newLevel)
+        // The display name, matched by the stable `achievement` enum rather than by the copy.
+        assertEquals(listOf("Conquista THREE_CAPTURES"), bonus.newBadges)
+    }
+
+    /**
+     * The rule the contract is strictest about: never show a level-up you did not verify.
+     *
+     * The user really is level 3 after the capture — but they may well have been level 3 before it
+     * too, and with no baseline there is no way to know. The number is checkable on the very next
+     * screen, so a wrong one is a lie the user catches immediately. Silence is the only honest
+     * answer, and the celebration itself is untouched.
+     */
+    @Test
+    fun `no level-up is claimed when the baseline profile read failed`() = runTest(dispatcher) {
+        val profiles = FakeProfileReader(
+            before = null,
+            after = profile(level = 3, unlocked = setOf("FIRST_CAPTURE"))
+        )
+        val viewModel = readyToSubmit(FakeCaptureGateway(), profiles)
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        val reward = viewModel.state.value.reward!!
+        assertNull("an unverifiable level-up must not be shown", reward.bonus)
+        // And the reward the capture response paid for is intact.
+        assertEquals(60, reward.xpAwarded)
+        assertTrue(reward.confirmed)
+    }
+
+    /**
+     * The non-blocking contract, from the other side: the enrichment call fails outright and the
+     * user still gets their celebration, in full, with the XP the capture response carried.
+     *
+     * If this ever regresses into an error state or a missing reward, the peak moment has been made
+     * to depend on a second network round-trip — which is exactly what it must never do.
+     */
+    @Test
+    fun `a failed profile read still leaves a complete reward`() = runTest(dispatcher) {
+        val profiles = FakeProfileReader(before = profile(level = 2), after = null)
+        val viewModel = readyToSubmit(FakeCaptureGateway(), profiles)
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        val reward = viewModel.state.value.reward!!
+        assertNull(reward.bonus)
+        assertEquals(60, reward.xpAwarded)
+        assertTrue(reward.confirmed)
+        assertNull(viewModel.state.value.errorMessage)
+    }
+
+    /** Same level on both reads is not a promotion, and must produce no bonus at all. */
+    @Test
+    fun `an unchanged profile produces no bonus`() = runTest(dispatcher) {
+        val profiles = FakeProfileReader(
+            before = profile(level = 4, unlocked = setOf("FIRST_CAPTURE")),
+            after = profile(level = 4, unlocked = setOf("FIRST_CAPTURE"))
+        )
+        val viewModel = readyToSubmit(FakeCaptureGateway(), profiles)
+
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertNull(viewModel.state.value.reward!!.bonus)
+    }
+
+    /**
+     * "Registrar outro" — the reward overlay's second way out. The form empties, the overlay goes,
+     * and crucially `saved` is released: leaving it latched would leave the re-submit guard closed
+     * and the Save button inert for the rest of the session.
+     *
+     * The position survives on purpose. The user has not moved.
+     */
+    @Test
+    fun `starting a new capture clears the reward and lets the user save again`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway()
+        val viewModel = readyToSubmit(gateway)
+
+        viewModel.submit()
+        advanceUntilIdle()
+        assertNotNull(viewModel.state.value.reward)
+
+        viewModel.startNewCapture()
+
+        val state = viewModel.state.value
+        assertNull(state.reward)
+        assertFalse(state.saved)
+        assertEquals("", state.title)
+        assertEquals("", state.description)
+        assertNull(state.photoFile)
+        assertNull(state.phenomenon)
+        // The photo the server has already consumed must not be cited again — citing it is a
+        // guaranteed 400 ("This photo has already been used for a capture").
+        assertNull(state.uploadedPhotoUrl)
+        assertNotNull("the fix is still good; do not make the user wait for it again", state.coordinates)
+
+        // And the guard really is open: a second, complete capture goes through.
+        viewModel.onTitleChanged("Neve")
+        viewModel.onDescriptionChanged("Flocos grossos")
+        viewModel.onPhenomenonSelected("SNOW")
+        viewModel.onPhotoTaken(jpeg("second.jpg"))
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(2, gateway.createdRequests.size)
+        assertTrue(viewModel.state.value.saved)
+    }
+
+    /**
+     * The race the enrichment opens: the profile read is in flight while the user is already
+     * looking at the overlay, and "Registrar outro" is one tap away. If the late answer wrote into
+     * a cleared state it would resurrect the celebration on top of a fresh, empty form.
+     */
+    @Test
+    fun `a late profile answer does not resurrect a dismissed reward`() = runTest(dispatcher) {
+        val profiles = FakeProfileReader(
+            before = profile(level = 2),
+            after = profile(level = 3),
+            gateAfter = true
+        )
+        val viewModel = readyToSubmit(FakeCaptureGateway(), profiles)
+
+        viewModel.submit()
+        advanceUntilIdle() // capture stored, overlay up, second profile read parked
+
+        viewModel.startNewCapture()
+        profiles.releaseAfter()
+        advanceUntilIdle()
+
+        assertNull("the dismissed reward must stay dismissed", viewModel.state.value.reward)
+    }
+
+    /** A ready-to-submit ViewModel: located, titled, described, phenomenon chosen, photo taken. */
+    private fun TestScope.readyToSubmit(
+        gateway: CaptureGateway,
+        profiles: FakeProfileReader? = null,
+        logWarning: LogWarning = noLogging
+    ): CaptureViewModel {
+        val viewModel = CaptureViewModel(
+            captures = gateway,
+            locationProvider = { Coordinates(-30.0346, -51.2177) },
+            profile = profiles?.let { { it.read() } },
+            logWarning = logWarning
+        )
+        viewModel.refreshLocation()
+        advanceUntilIdle() // also lets the baseline profile read land, when there is one
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
         viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(jpeg())
         return viewModel
     }
+
+    /**
+     * A [ProfileResponse] with only the three fields the reward diff reads filled in meaningfully.
+     * The rest are zeroes: asserting on them would be asserting on the fixture.
+     */
+    private fun profile(level: Int, unlocked: Set<String> = emptySet()): ProfileResponse =
+        ProfileResponse(
+            user = UserSummary("u", "Test Pilot", "pilot@skydex.app", "2026-01-01T00:00:00Z"),
+            level = level,
+            totalXp = 0,
+            xpToNextLevel = 0,
+            confirmedCaptures = 0,
+            totalCaptures = 0,
+            capturedSpecies = 0,
+            totalSpecies = 9,
+            friends = 0,
+            unlockedBadges = unlocked.size,
+            totalBadges = 12,
+            // The real endpoint returns every achievement, locked ones included, so the diff has to
+            // filter on `unlocked` rather than on presence. A fixture that only listed the unlocked
+            // ones would hide a diff that got that wrong.
+            badges = listOf("FIRST_CAPTURE", "THREE_CAPTURES", "TEN_CAPTURES").map { achievement ->
+                BadgeResponse(
+                    achievement = achievement,
+                    displayName = "Conquista $achievement",
+                    description = "",
+                    unlocked = achievement in unlocked,
+                    unlockedAt = if (achievement in unlocked) "2026-08-07T17:00:00Z" else null
+                )
+            }
+        )
 
     /** An [HttpException] shaped like a real one, carrying [body] as the error payload. */
     private fun httpError(code: Int, body: String): HttpException = HttpException(
@@ -616,15 +1043,38 @@ class FakeCaptureGateway(
     // Set to open the window that orphans a JPEG: the upload lands, the create does not, and the
     // photo on the server is now referenced by nothing. `var` so a test can also close the window
     // again and watch the retry succeed.
-    var createFailure: Throwable? = null
+    var createFailure: Throwable? = null,
+    /**
+     * The verdict the server reaches, and what it is worth.
+     *
+     * Not two independent knobs: the backend awards `rarity.xp` on CONFIRMED and **exactly zero**
+     * on every UNCONFIRMED path (`CaptureValidationService` returns
+     * `ValidationResult(UNCONFIRMED, code, 0)` five times over, and `CaptureCommitService.commit`
+     * re-zeroes it when the locked travel re-check downgrades a confirmed one). A fake that let a
+     * test say "unconfirmed, 60 XP" would let the reward overlay pass on a combination the server
+     * cannot produce.
+     */
+    var confirmed: Boolean = true,
+    var rarity: String = "RARE"
 ) : CaptureGateway {
 
     val uploadedFiles = mutableListOf<File>()
     val createdRequests = mutableListOf<CreateWeatherEventRequest>()
 
+    /** Ids handed to [delete], in order. Empty is the assertion that nothing was taken back. */
+    val deletedIds = mutableListOf<String>()
+
+    /** Set to make the silent discard fail. The record then survives on the server. */
+    var deleteFailure: Throwable? = null
+
     override suspend fun uploadPhoto(file: File): Result<String> {
         uploadedFiles += file
         return uploadResult
+    }
+
+    override suspend fun delete(id: String): Result<Unit> {
+        deletedIds += id
+        return deleteFailure?.let { Result.failure(it) } ?: Result.success(Unit)
     }
 
     override suspend fun create(request: CreateWeatherEventRequest): Result<WeatherEventResponse> {
@@ -643,11 +1093,55 @@ class FakeCaptureGateway(
                 authorName = "Test Pilot",
                 phenomenon = request.phenomenon,
                 phenomenonName = "Tempestade com Trovões",
-                rarity = "RARE",
-                validationStatus = "CONFIRMED",
-                xpAwarded = 60
+                rarity = rarity,
+                validationStatus = if (confirmed) "CONFIRMED" else "UNCONFIRMED",
+                xpAwarded = if (confirmed) XP_BY_RARITY.getValue(rarity) else 0
             )
         )
+    }
+
+    private companion object {
+        /** `Rarity(val xp: Int)` on the server, mirrored so the fake cannot invent an award. */
+        val XP_BY_RARITY = mapOf(
+            "COMMON" to 10,
+            "UNCOMMON" to 25,
+            "RARE" to 60,
+            "EPIC" to 150,
+            "LEGENDARY" to 400
+        )
+    }
+}
+
+/**
+ * The optional profile reader, answering differently on the first call than on the second.
+ *
+ * That asymmetry is the whole point: the reward's level-up and badge lines come from diffing the
+ * profile as it stood *before* the capture against the profile *after* it, so a fake that returned
+ * one fixed value could never distinguish "levelled up" from "was already there" — which is the
+ * exact mistake the diff exists to prevent.
+ *
+ * A `null` in either slot is that read failing. Both failure modes must leave the celebration
+ * intact and simply produce no bonus.
+ *
+ * @param gateAfter parks the second read until [releaseAfter], so a test can act on the overlay
+ *   while the enrichment is still in flight — the window in which the user can dismiss it.
+ */
+private class FakeProfileReader(
+    private val before: ProfileResponse?,
+    private val after: ProfileResponse?,
+    gateAfter: Boolean = false
+) {
+    private val gate = if (gateAfter) CompletableDeferred() else CompletableDeferred(Unit)
+    private var reads = 0
+
+    fun releaseAfter() = gate.complete(Unit)
+
+    suspend fun read(): Result<ProfileResponse> {
+        val first = reads++ == 0
+        if (!first) gate.await()
+        val answer = if (first) before else after
+        return answer?.let { Result.success(it) }
+            ?: Result.failure(IOException("profile unavailable"))
     }
 }
 
@@ -680,4 +1174,30 @@ private class SuspendingUploadGateway(
 
     override suspend fun create(request: CreateWeatherEventRequest): Result<WeatherEventResponse> =
         creates.create(request)
+
+    override suspend fun delete(id: String): Result<Unit> = creates.delete(id)
+}
+
+/**
+ * A gateway whose `delete` really suspends, so a test can look at the screen *while* the silent
+ * discard is still in flight.
+ *
+ * [FakeCaptureGateway.delete] answers without ever hitting a suspension point, which makes the
+ * discard indistinguishable from a blocking one from the ViewModel's side — exactly the property
+ * under test here.
+ */
+private class GatedDeleteGateway(
+    private val delegate: FakeCaptureGateway
+) : CaptureGateway by delegate {
+
+    private val gate = CompletableDeferred<Unit>()
+
+    val deletedIds: List<String> get() = delegate.deletedIds
+
+    fun releaseDelete() = gate.complete(Unit)
+
+    override suspend fun delete(id: String): Result<Unit> {
+        gate.await()
+        return delegate.delete(id)
+    }
 }

@@ -13,3 +13,6 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Kotlin incremental-compilation session data (build artifact, never source)
+.kotlin/

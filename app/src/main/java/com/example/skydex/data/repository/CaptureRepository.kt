@@ -42,7 +42,7 @@ class CaptureRepository(private val api: SkyDexApi) : CaptureGateway {
      * [resultOf] alone would report a 403 or a 404 as a *successful* delete. Convert it to a
      * failure explicitly.
      */
-    suspend fun delete(id: String): Result<Unit> = resultOf {
+    override suspend fun delete(id: String): Result<Unit> = resultOf {
         val response = api.deleteCapture(id)
         if (!response.isSuccessful) throw HttpException(response)
     }

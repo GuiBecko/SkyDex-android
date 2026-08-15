@@ -83,8 +83,8 @@ class HomeViewModelTest {
         advanceUntilIdle()
 
         assertEquals(
-            UiState.Error("Ative o GPS para ver os fenômenos da sua região."),
-            viewModel.state.value
+            "Não achamos onde você está",
+            (viewModel.state.value as UiState.Error).message.title
         )
         assertEquals(emptyList<Pair<Double, Double>>(), api.nearbyCalls)
     }
@@ -97,9 +97,11 @@ class HomeViewModelTest {
         viewModel.loadForCurrentPosition()
         advanceUntilIdle()
 
+        // Offline, not a blanket "não foi possível": the presenter separates transport from
+        // everything else, so the user is told the one thing they can actually act on.
         assertEquals(
-            UiState.Error("Não foi possível carregar os eventos próximos."),
-            viewModel.state.value
+            "Sem conexão",
+            (viewModel.state.value as UiState.Error).message.title
         )
     }
 
@@ -176,7 +178,7 @@ class HomeViewModelTest {
         assertTrue(viewModel.shouldLoadOnEntry())
         viewModel.loadForCurrentPosition()
         advanceUntilIdle()
-        assertEquals(UiState.Error("Não foi possível carregar os eventos próximos."), viewModel.state.value)
+        assertEquals("Sem conexão", (viewModel.state.value as UiState.Error).message.title)
 
         assertTrue(viewModel.shouldLoadOnEntry())
     }
@@ -244,5 +246,120 @@ class HomeViewModelTest {
         viewModel.loadForCurrentPosition()
 
         assertEquals(UiState.Loading, viewModel.state.value)
+    }
+
+    /**
+     * ...and the exact opposite once a list exists, which is finding A4. Falling back to `Loading`
+     * over content already on screen destroys it just as thoroughly as an error state does — only
+     * with a spinner instead of a sentence. The phenomena stay put while the reload runs.
+     */
+    @Test
+    fun `a reload over a loaded list does not fall back to Loading`() = runTest(dispatcher) {
+        api.nearbyResponse = { listOf(storm) }
+        val viewModel =
+            HomeViewModel(repository, locationProvider = { coordinates }, logWarning = noLogging)
+        viewModel.loadForCurrentPosition()
+        advanceUntilIdle()
+
+        viewModel.loadForCurrentPosition()
+
+        assertEquals(UiState.Success(HomeData(coordinates, listOf(storm))), viewModel.state.value)
+    }
+
+    /** And when that reload fails, the list survives and the failure arrives as a banner (A4). */
+    @Test
+    fun `a failed reload keeps the phenomena already on screen`() = runTest(dispatcher) {
+        api.nearbyResponse = { listOf(storm) }
+        val viewModel =
+            HomeViewModel(repository, locationProvider = { coordinates }, logWarning = noLogging)
+        viewModel.loadForCurrentPosition()
+        advanceUntilIdle()
+
+        api.nearbyResponse = { throw IOException("offline") }
+        viewModel.loadForCurrentPosition()
+        advanceUntilIdle()
+
+        val state = viewModel.state.value
+        assertTrue(state is UiState.Success)
+        assertEquals(listOf(storm), (state as UiState.Success).data.phenomena)
+        assertEquals("Sem conexão", state.staleMessage?.title)
+    }
+
+    /** Losing the GPS fix on a reload is the same story: keep the list, hang the instruction over it. */
+    @Test
+    fun `losing the fix on a reload keeps the phenomena already on screen`() = runTest(dispatcher) {
+        api.nearbyResponse = { listOf(storm) }
+        var fix: Coordinates? = coordinates
+        val viewModel = HomeViewModel(repository, locationProvider = { fix }, logWarning = noLogging)
+        viewModel.loadForCurrentPosition()
+        advanceUntilIdle()
+
+        fix = null
+        viewModel.loadForCurrentPosition()
+        advanceUntilIdle()
+
+        val state = viewModel.state.value
+        assertTrue(state is UiState.Success)
+        assertEquals(listOf(storm), (state as UiState.Success).data.phenomena)
+        assertEquals("Não achamos onde você está", state.staleMessage?.title)
+    }
+
+    /** A successful reload clears the banner without the user having to close it. */
+    @Test
+    fun `a successful reload clears the message`() = runTest(dispatcher) {
+        api.nearbyResponse = { listOf(storm) }
+        val viewModel =
+            HomeViewModel(repository, locationProvider = { coordinates }, logWarning = noLogging)
+        viewModel.loadForCurrentPosition()
+        advanceUntilIdle()
+
+        api.nearbyResponse = { throw IOException("offline") }
+        viewModel.loadForCurrentPosition()
+        advanceUntilIdle()
+
+        api.nearbyResponse = { listOf(storm) }
+        viewModel.loadForCurrentPosition()
+        advanceUntilIdle()
+
+        assertEquals(UiState.Success(HomeData(coordinates, listOf(storm))), viewModel.state.value)
+    }
+
+    /** Dismissing drops the banner and leaves the list exactly where it was. */
+    @Test
+    fun `dismissing the message keeps the phenomena`() = runTest(dispatcher) {
+        api.nearbyResponse = { listOf(storm) }
+        val viewModel =
+            HomeViewModel(repository, locationProvider = { coordinates }, logWarning = noLogging)
+        viewModel.loadForCurrentPosition()
+        advanceUntilIdle()
+
+        api.nearbyResponse = { throw IOException("offline") }
+        viewModel.loadForCurrentPosition()
+        advanceUntilIdle()
+
+        viewModel.dismissMessage()
+
+        assertEquals(UiState.Success(HomeData(coordinates, listOf(storm))), viewModel.state.value)
+    }
+
+    /**
+     * The latch re-arms for a dead end, not for a stale banner. A user holding a list *and* a
+     * visible notice with its own retry has somewhere to go, so re-entering the tab must not throw
+     * that list away and re-run the permission request behind their back.
+     */
+    @Test
+    fun `re-entering after a failed reload over a loaded list does not reload`() = runTest(dispatcher) {
+        api.nearbyResponse = { listOf(storm) }
+        val viewModel =
+            HomeViewModel(repository, locationProvider = { coordinates }, logWarning = noLogging)
+        assertTrue(viewModel.shouldLoadOnEntry())
+        viewModel.loadForCurrentPosition()
+        advanceUntilIdle()
+
+        api.nearbyResponse = { throw IOException("offline") }
+        viewModel.loadForCurrentPosition()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.shouldLoadOnEntry())
     }
 }

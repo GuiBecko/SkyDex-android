@@ -1,5 +1,6 @@
 package com.example.skydex.ui.auth
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -7,7 +8,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -17,12 +20,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.skydex.ui.common.Tone
+import com.example.skydex.ui.common.UiMessage
+import com.example.skydex.ui.components.SkyDexNotice
+import com.example.skydex.ui.theme.SkyDexSpacing
+import com.example.skydex.ui.theme.SkyDexTheme
 
 @Composable
 fun RegisterScreen(
@@ -62,60 +67,73 @@ private fun RegisterContent(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(24.dp),
+            // Declared explicitly: with no background of its own this screen inherited the dark
+            // Surface in dark mode while its content assumed light (audit finding B4).
+            .background(MaterialTheme.colorScheme.background)
+            .padding(SkyDexSpacing.xl),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("Criar Conta", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0284C7))
-        Spacer(Modifier.height(32.dp))
+        Text(
+            text = "Criar Conta",
+            style = MaterialTheme.typography.headlineMedium,
+            // `colorScheme.primary`, not the brighter decorative accent — this is text.
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.height(SkyDexSpacing.xxl))
 
         OutlinedTextField(
             value = state.name,
             onValueChange = onNameChanged,
             label = { Text("Nome Completo") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+            modifier = Modifier.fillMaxWidth()
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(SkyDexSpacing.lg))
 
         OutlinedTextField(
             value = state.email,
             onValueChange = onEmailChanged,
             label = { Text("E-mail") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Email,
+                capitalization = KeyboardCapitalization.None
+            ),
+            modifier = Modifier.fillMaxWidth()
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(SkyDexSpacing.lg))
 
-        OutlinedTextField(
+        PasswordField(
             value = state.password,
             onValueChange = onPasswordChanged,
-            label = { Text("Senha") },
-            supportingText = { Text("Mínimo de ${RegisterViewModel.MIN_PASSWORD_LENGTH} caracteres") },
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            label = "Senha",
+            hint = "Mínimo de ${RegisterViewModel.MIN_PASSWORD_LENGTH} caracteres"
         )
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(SkyDexSpacing.xl))
 
-        state.errorMessage?.let {
-            Text(it, color = Color.Red, modifier = Modifier.padding(bottom = 16.dp))
+        state.errorMessage?.let { message ->
+            SkyDexNotice(message = message, modifier = Modifier.padding(bottom = SkyDexSpacing.lg))
         }
 
         Button(
             onClick = onSubmit,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp),
+                .height(SkyDexSpacing.xxxl),
             enabled = !state.submitting
         ) {
-            Text(if (state.submitting) "Registrando..." else "Registrar", fontSize = 16.sp)
+            Text(
+                text = if (state.submitting) "Registrando..." else "Registrar",
+                style = MaterialTheme.typography.titleMedium
+            )
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(SkyDexSpacing.lg))
 
         TextButton(onClick = onNavigateToLogin) {
-            Text("Já possui conta? Faça Login")
+            Text("Já possui conta? Faça Login", style = MaterialTheme.typography.bodyLarge)
         }
     }
 }
@@ -123,30 +141,89 @@ private fun RegisterContent(
 @Preview(showBackground = true)
 @Composable
 private fun RegisterContentPreview() {
-    RegisterContent(
-        state = RegisterUiState(name = "Pilot", email = "pilot@skydex.com", password = "secret123"),
-        onNameChanged = {},
-        onEmailChanged = {},
-        onPasswordChanged = {},
-        onSubmit = {},
-        onNavigateToLogin = {}
-    )
+    SkyDexTheme(darkTheme = false) {
+        RegisterContent(
+            state = RegisterUiState(
+                name = "Pilot",
+                email = "pilot@skydex.com",
+                password = "secret123"
+            ),
+            onNameChanged = {},
+            onEmailChanged = {},
+            onPasswordChanged = {},
+            onSubmit = {},
+            onNavigateToLogin = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Registro - escuro", backgroundColor = 0xFF0B1220)
+@Composable
+private fun RegisterContentDarkPreview() {
+    SkyDexTheme(darkTheme = true) {
+        RegisterContent(
+            state = RegisterUiState(
+                name = "Pilot",
+                email = "pilot@skydex.com",
+                password = "secret123"
+            ),
+            onNameChanged = {},
+            onEmailChanged = {},
+            onPasswordChanged = {},
+            onSubmit = {},
+            onNavigateToLogin = {}
+        )
+    }
 }
 
 @Preview(showBackground = true, name = "Registro com senha curta")
 @Composable
 private fun RegisterContentErrorPreview() {
-    RegisterContent(
-        state = RegisterUiState(
-            name = "Pilot",
-            email = "pilot@skydex.com",
-            password = "curta",
-            errorMessage = "A senha deve ter no mínimo 8 caracteres."
-        ),
-        onNameChanged = {},
-        onEmailChanged = {},
-        onPasswordChanged = {},
-        onSubmit = {},
-        onNavigateToLogin = {}
-    )
+    SkyDexTheme(darkTheme = false) {
+        RegisterContent(
+            state = RegisterUiState(
+                name = "Pilot",
+                email = "pilot@skydex.com",
+                password = "curta",
+                errorMessage = UiMessage(
+                    title = "A senha está curta",
+                    body = "Use no mínimo ${RegisterViewModel.MIN_PASSWORD_LENGTH} caracteres.",
+                    tone = Tone.NOTICE
+                )
+            ),
+            onNameChanged = {},
+            onEmailChanged = {},
+            onPasswordChanged = {},
+            onSubmit = {},
+            onNavigateToLogin = {}
+        )
+    }
+}
+
+@Preview(
+    showBackground = true,
+    name = "Registro com senha curta - escuro",
+    backgroundColor = 0xFF0B1220
+)
+@Composable
+private fun RegisterContentErrorDarkPreview() {
+    SkyDexTheme(darkTheme = true) {
+        RegisterContent(
+            state = RegisterUiState(
+                name = "Pilot",
+                email = "pilot@skydex.com",
+                password = "curta",
+                errorMessage = UiMessage(
+                    title = "A senha está curta",
+                    body = "Use no mínimo ${RegisterViewModel.MIN_PASSWORD_LENGTH} caracteres.",
+                    tone = Tone.NOTICE
+                )
+            ),
+            onNameChanged = {},
+            onEmailChanged = {},
+            onPasswordChanged = {},
+            onSubmit = {},
+            onNavigateToLogin = {}
+        )
+    }
 }

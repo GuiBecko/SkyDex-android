@@ -4,6 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.skydex.data.remote.dto.FriendRequestResponse
 import com.example.skydex.data.remote.dto.FriendResponse
+import com.example.skydex.ui.common.ErrorContext
+import com.example.skydex.ui.common.Tone
+import com.example.skydex.ui.common.UiMessage
+import com.example.skydex.ui.common.toUiMessage
 import com.example.skydex.ui.social.SocialGateway
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,7 +20,37 @@ data class FriendsUiState(
     val friends: List<FriendResponse> = emptyList(),
     val requests: List<FriendRequestResponse> = emptyList(),
     val loading: Boolean = false,
-    val message: String? = null
+    /**
+     * Success **and** failure travel through this one field — but as a [UiMessage], which carries
+     * its own [Tone].
+     *
+     * It used to be a `String?`, and `FriendsScreen` picked the colour by comparing it against the
+     * literal `"Convite enviado!"` — grey if it matched, red otherwise (audit finding A5).
+     * Two things were wrong with that. The kind of feedback was inferred by comparing copy, so
+     * adding an accent or trimming the exclamation mark silently repainted a success as a red
+     * failure. And the app's one moment of social reward was rendered in grey.
+     *
+     * Carrying the tone on the message makes both impossible: an editor can rewrite every string
+     * here and a success stays green, because nothing downstream reads the text to decide.
+     */
+    val message: UiMessage? = null
+)
+
+/** Local validation — there is no request, so no throwable, so no `ErrorPresenter`. */
+private val MissingEmail = UiMessage(
+    title = "Digite o e-mail do seu amigo",
+    body = "Precisamos do endereço da conta dele para enviar o convite.",
+    tone = Tone.NOTICE
+)
+
+/**
+ * The one reward moment in the social flow. [Tone.SUCCESS], so it renders green — see the note on
+ * [FriendsUiState.message] for why it used to be grey.
+ */
+private val InviteSent = UiMessage(
+    title = "Convite enviado!",
+    body = "Avisamos você assim que ele aceitar.",
+    tone = Tone.SUCCESS
 )
 
 class FriendsViewModel(private val social: SocialGateway) : ViewModel() {
@@ -40,18 +74,22 @@ class FriendsViewModel(private val social: SocialGateway) : ViewModel() {
     fun sendRequest() {
         val email = _state.value.email.trim()
         if (email.isBlank()) {
-            _state.update { it.copy(message = "Digite o e-mail do seu amigo.") }
+            _state.update { it.copy(message = MissingEmail) }
             return
         }
 
         viewModelScope.launch {
             social.sendRequest(email)
                 .onSuccess {
-                    _state.update { it.copy(email = "", message = "Convite enviado!") }
+                    _state.update { it.copy(email = "", message = InviteSent) }
                     refresh()
                 }
-                .onFailure {
-                    _state.update { it.copy(message = "Não foi possível enviar o convite.") }
+                .onFailure { failure ->
+                    // The presenter separates the three answers this endpoint really gives —
+                    // 404 (no account with that address), 409 (already invited or already
+                    // friends), 403 (that address is your own) — which the single
+                    // "Não foi possível enviar o convite." threw away.
+                    _state.update { it.copy(message = failure.toUiMessage(ErrorContext.FRIENDS)) }
                 }
         }
     }
@@ -60,7 +98,9 @@ class FriendsViewModel(private val social: SocialGateway) : ViewModel() {
         viewModelScope.launch {
             social.accept(requestId)
                 .onSuccess { refresh() }
-                .onFailure { _state.update { it.copy(message = "Não foi possível aceitar o convite.") } }
+                .onFailure { failure ->
+                    _state.update { it.copy(message = failure.toUiMessage(ErrorContext.FRIENDS)) }
+                }
         }
     }
 
@@ -80,7 +120,9 @@ class FriendsViewModel(private val social: SocialGateway) : ViewModel() {
     fun decline(requestId: String) {
         viewModelScope.launch {
             social.decline(requestId)
-                .onFailure { _state.update { it.copy(message = "Não foi possível recusar o convite.") } }
+                .onFailure { failure ->
+                    _state.update { it.copy(message = failure.toUiMessage(ErrorContext.FRIENDS)) }
+                }
             refresh()
         }
     }

@@ -3,6 +3,7 @@ package com.example.skydex.ui.friends
 import com.example.skydex.data.remote.dto.FriendRequestResponse
 import com.example.skydex.data.remote.dto.FriendResponse
 import com.example.skydex.data.remote.dto.WeatherEventResponse
+import com.example.skydex.ui.common.Tone
 import com.example.skydex.ui.social.FakeSocialGateway
 import com.example.skydex.ui.social.SocialGateway
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +15,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
@@ -54,7 +56,36 @@ class FriendsViewModelTest {
 
         assertEquals(listOf("bob@skydex.com"), gateway.sentTo)
         assertEquals("", viewModel.state.value.email)
-        assertEquals("Convite enviado!", viewModel.state.value.message)
+
+        // Audit finding A5. The screen used to pick the colour with
+        // `message == "Convite enviado!"`, so this — the app's one social reward — rendered grey
+        // and any copy edit would have flipped it to a red failure. The tone rides on the message
+        // now, and this asserts it rather than the wording that used to stand in for it.
+        val message = viewModel.state.value.message!!
+        assertEquals(Tone.SUCCESS, message.tone)
+        assertEquals("Convite enviado!", message.title)
+    }
+
+    /**
+     * The other half of A5: a failure and a success must be distinguishable *structurally*. If
+     * this ever holds, something is again inferring the kind of feedback from the copy.
+     */
+    @Test
+    fun `a failed invite and a sent invite never share a tone`() = runTest(dispatcher) {
+        val sent = FriendsViewModel(FakeSocialGateway())
+        advanceUntilIdle()
+        sent.onEmailChanged("bob@skydex.com")
+        sent.sendRequest()
+        advanceUntilIdle()
+
+        val failed = FriendsViewModel(FakeSocialGateway(sendResult = Result.failure(IOException("nope"))))
+        advanceUntilIdle()
+        failed.onEmailChanged("bob@skydex.com")
+        failed.sendRequest()
+        advanceUntilIdle()
+
+        assertEquals(Tone.SUCCESS, sent.state.value.message!!.tone)
+        assertNotEquals(Tone.SUCCESS, failed.state.value.message!!.tone)
     }
 
     @Test
@@ -67,7 +98,8 @@ class FriendsViewModelTest {
         advanceUntilIdle()
 
         assertEquals(0, gateway.sentTo.size)
-        assertEquals("Digite o e-mail do seu amigo.", viewModel.state.value.message)
+        assertEquals("Digite o e-mail do seu amigo", viewModel.state.value.message?.title)
+        assertEquals(Tone.NOTICE, viewModel.state.value.message?.tone)
     }
 
     @Test
@@ -81,7 +113,8 @@ class FriendsViewModelTest {
         advanceUntilIdle()
 
         assertEquals("ghost@skydex.com", viewModel.state.value.email)
-        assertEquals("Não foi possível enviar o convite.", viewModel.state.value.message)
+        assertEquals("Sem conexão", viewModel.state.value.message?.title)
+        assertEquals(Tone.NOTICE, viewModel.state.value.message?.tone)
     }
 
     @Test
@@ -138,7 +171,7 @@ class FriendsViewModelTest {
             0,
             viewModel.state.value.requests.size
         )
-        assertEquals("Não foi possível recusar o convite.", viewModel.state.value.message)
+        assertEquals("Sem conexão", viewModel.state.value.message?.title)
     }
 
     @Test
