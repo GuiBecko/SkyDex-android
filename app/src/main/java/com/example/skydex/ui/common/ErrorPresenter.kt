@@ -114,6 +114,10 @@ fun Throwable.toUiMessage(context: ErrorContext): UiMessage {
         status == 404 -> notFound(context, backend)
         status == 409 -> conflict(context, backend)
         status == 413 -> PhotoTooLarge
+        status == 422 -> unprocessable(context)
+        // Before `status >= 500`, and the order is the whole point: 503 is not an outage report,
+        // it is "an upstream we need is briefly unavailable, and nothing you did was lost".
+        status == 503 -> unavailable(context)
         status == 400 -> badRequest(context, backend)
         status >= 500 -> ServerDown
         else -> generic(context)
@@ -289,14 +293,9 @@ private fun conflict(context: ErrorContext, backend: String?): UiMessage = when 
 /**
  * 400 — the server saying "this will never be accepted as it stands".
  *
- * Tasks 12b and 12c wrote five distinct, actionable 400s for the capture path alone, and each one
+ * Tasks 12b and 12c wrote distinct, actionable 400s for the capture path alone, and each one
  * implies a different next step: an expired photo needs a new shot, a wrong file type needs a
- * different file, an unknown phenomenon needs a different chip. A single "tente de novo" is wrong
- * for all of them.
- *
- * `"Unknown phenomenon: <ENUM>"` is the reason this function matches on a *prefix* rather than the
- * whole string: the enum name is appended by the server and must never reach a screen. It does not,
- * because the returned copy is written here and the backend text is only ever read.
+ * different file. A single "tente de novo" is wrong for all of them.
  */
 private fun badRequest(context: ErrorContext, backend: String?): UiMessage = when {
     backend.mentions("photo has expired") -> UiMessage(
@@ -308,12 +307,6 @@ private fun badRequest(context: ErrorContext, backend: String?): UiMessage = whe
     backend.mentions("already been used for a capture") -> UiMessage(
         title = "Essa foto já virou um registro",
         body = "Tire uma nova foto para registrar de novo.",
-        tone = Tone.NOTICE
-    )
-
-    backend.mentions("unknown phenomenon") -> UiMessage(
-        title = "Não reconhecemos esse fenômeno",
-        body = "Escolha o fenômeno na lista e salve de novo.",
         tone = Tone.NOTICE
     )
 
@@ -331,7 +324,7 @@ private fun badRequest(context: ErrorContext, backend: String?): UiMessage = whe
 
     context == ErrorContext.CAPTURE_SAVE -> UiMessage(
         title = "Não deu para salvar esse registro",
-        body = "Confira a foto e o fenômeno escolhido e tente de novo.",
+        body = "Confira a foto e tente de novo.",
         tone = Tone.NOTICE,
         actionLabel = RETRY
     )
@@ -346,6 +339,59 @@ private fun badRequest(context: ErrorContext, backend: String?): UiMessage = whe
         title = "Alguma informação não foi aceita",
         body = "Confira os dados e tente de novo.",
         tone = Tone.NOTICE
+    )
+}
+
+/**
+ * 422 — the request was fine, the content was not.
+ *
+ * One endpoint produces it: `POST /api/photos`, when the vision model does not believe the picture
+ * is an outdoor sky. Distinct from a 400 on purpose, because the instructions differ. A 400 means
+ * re-check what you typed; this means point the camera somewhere else.
+ */
+private fun unprocessable(context: ErrorContext): UiMessage = when (context) {
+    ErrorContext.PHOTO_UPLOAD -> UiMessage(
+        title = "Essa foto não parece o céu",
+        body = "Aponte a câmera para cima e tire outra foto do fenômeno.",
+        tone = Tone.NOTICE
+    )
+
+    else -> UiMessage(
+        title = "Não deu para aceitar isso",
+        body = "Confira o que você enviou e tente de novo.",
+        tone = Tone.NOTICE
+    )
+}
+
+/**
+ * 503 — an upstream the server needs did not answer.
+ *
+ * Two sources, and the copy differs because what survives differs. On upload nothing was written
+ * at all. On save, the backend raises the 503 *before* the photo is spent — `PhotoProvenanceService
+ * .consume` runs inside the commit transaction, which is never reached — so the photo is still
+ * citable and pressing Save again is genuinely all that is needed. Saying "tire outra foto" here
+ * would send the user to redo work that was never lost.
+ */
+private fun unavailable(context: ErrorContext): UiMessage = when (context) {
+    ErrorContext.PHOTO_UPLOAD -> UiMessage(
+        title = "Não conseguimos analisar a foto agora",
+        body = "Tente de novo em instantes.",
+        tone = Tone.NOTICE,
+        actionLabel = RETRY
+    )
+
+    ErrorContext.CAPTURE_SAVE -> UiMessage(
+        title = "Não conseguimos conferir o clima agora",
+        body = "Sua foto está salva. Toque em salvar de novo em instantes.",
+        tone = Tone.NOTICE,
+        actionLabel = RETRY
+    )
+
+    else -> UiMessage(
+        title = "Esse serviço está indisponível agora",
+        body = "Tente de novo em instantes.",
+        tone = Tone.NOTICE,
+        actionLabel = RETRY
     )
 }
 
@@ -407,10 +453,11 @@ private fun generic(context: ErrorContext): UiMessage = when (context) {
 /**
  * Case-insensitive substring match against the backend's envelope.
  *
- * Substring and not equality on purpose: `"Unknown phenomenon: THUNDERSTORM"` carries a suffix the
- * server appends, and a future rewording of a message's tail should not silently downgrade a
- * specific message to the generic one. `null` (unreadable body) never matches, which is what sends
- * the flow to the context fallback.
+ * Substring and not equality on purpose: a message like `"Photo has expired; take a new one"`
+ * carries a clause this file only needs a fragment of ("photo has expired"), and a future
+ * rewording of the rest of the sentence should not silently downgrade a specific message to the
+ * generic one. `null` (unreadable body) never matches, which is what sends the flow to the context
+ * fallback.
  */
 private fun String?.mentions(vararg needles: String): Boolean {
     val text = this?.lowercase() ?: return false

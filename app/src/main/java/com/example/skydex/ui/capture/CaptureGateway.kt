@@ -12,14 +12,4 @@ import java.io.File
 interface CaptureGateway {
     suspend fun uploadPhoto(file: File): Result<String>
     suspend fun create(request: CreateWeatherEventRequest): Result<WeatherEventResponse>
-
-    /**
-     * `DELETE api/events/{id}`.
-     *
-     * The capture screen is not a management surface and offers no delete button — this exists
-     * for exactly one caller, [CaptureViewModel.discardUnconfirmed], which takes back a capture the
-     * backend declined to confirm. See that function for the whole contract, including why its
-     * failure is never shown to anyone.
-     */
-    suspend fun delete(id: String): Result<Unit>
 }

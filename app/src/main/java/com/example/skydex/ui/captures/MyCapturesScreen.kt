@@ -209,6 +209,18 @@ private fun CaptureCardBody(capture: WeatherEventResponse) {
             color = SkyDexPalette.colors.textSecondary
         )
 
+        // Unconfirmed captures are kept now instead of being deleted behind the user's back, so
+        // the list has to say which ones they are. Without this the user sees a capture worth no
+        // XP sitting among ones that are, with nothing to explain it.
+        if (!capture.validationStatus.equals("CONFIRMED", ignoreCase = true)) {
+            Spacer(modifier = Modifier.height(SkyDexSpacing.xs))
+            Text(
+                text = "Não confirmada",
+                style = MaterialTheme.typography.labelSmall,
+                color = SkyDexPalette.colors.textSecondary
+            )
+        }
+
         // `"Data: ${capture.capturedAt}"` used to render `Data: 2026-08-07T18:20:00Z` here
         // (audit finding A11). Null means the timestamp did not parse — the line is dropped
         // rather than falling back to the raw string, which would put the ISO text back.
@@ -258,6 +270,24 @@ private val previewCaptures = listOf(
         rarity = "RARE",
         validationStatus = "CONFIRMED",
         xpAwarded = 60
+    ),
+    // Kept rather than deleted (Task 10), so the badge below has something to render in a preview.
+    WeatherEventResponse(
+        id = "3",
+        title = "Nuvem estranha sobre o bairro",
+        description = "Achei que era uma tempestade chegando.",
+        photoUrl = "",
+        capturedAt = "2026-08-05T14:10:00Z",
+        latitude = -23.55,
+        longitude = -46.63,
+        userId = "u1",
+        authorName = "Pilot",
+        phenomenon = "THUNDERSTORM",
+        phenomenonName = "Tempestade com Trovões",
+        rarity = "RARE",
+        validationStatus = "UNCONFIRMED",
+        unconfirmedReason = "PHOTO_CONTRADICTS_WEATHER",
+        xpAwarded = 0
     )
 )
 
