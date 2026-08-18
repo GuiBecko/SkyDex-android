@@ -85,6 +85,108 @@ class CaptureViewModelTest {
         // capture time (Task 6), which is what stops a client backdating to yesterday's storm.
     }
 
+    // -----------------------------------------------------------------------------------------
+    // The eager upload (Task 8): fired the instant the shutter closes, not at Save time.
+    // -----------------------------------------------------------------------------------------
+
+    @Test
+    fun `uploads the photo as soon as it is taken`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway()
+        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0, -51.0) }
+
+        viewModel.onPhotoTaken(jpeg())
+        advanceUntilIdle()
+
+        // Before submit is ever called. The user spends the next several seconds typing, and the
+        // model's forward pass happens inside that time instead of after it.
+        assertEquals(1, gateway.uploadedFiles.size)
+        assertNotNull(viewModel.state.value.uploadedPhotoUrl)
+    }
+
+    @Test
+    fun `submit reuses the eager upload instead of sending a second copy`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway()
+        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0, -51.0) }
+
+        viewModel.refreshLocation()
+        advanceUntilIdle()
+        viewModel.onPhotoTaken(jpeg())
+        advanceUntilIdle()
+        viewModel.onTitleChanged("t")
+        viewModel.onDescriptionChanged("d")
+        viewModel.submit()
+        advanceUntilIdle()
+
+        assertEquals(1, gateway.uploadedFiles.size)
+        assertTrue(viewModel.state.value.saved)
+    }
+
+    @Test
+    fun `submit waits for an upload still in flight`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway()
+        val gate = CompletableDeferred<Unit>()
+        gateway.uploadGate = gate
+        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0, -51.0) }
+
+        viewModel.refreshLocation()
+        advanceUntilIdle()
+        viewModel.onPhotoTaken(jpeg())
+        viewModel.onTitleChanged("t")
+        viewModel.onDescriptionChanged("d")
+        viewModel.submit()
+        advanceUntilIdle()
+
+        // Still waiting on the upload, so nothing has been created and the button is still busy.
+        assertTrue(viewModel.state.value.submitting)
+        assertTrue(gateway.createdRequests.isEmpty())
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.state.value.saved)
+        assertEquals(1, gateway.uploadedFiles.size)
+    }
+
+    @Test
+    fun `an eager upload that fails surfaces its message without blocking a retake`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway()
+        gateway.uploadResult = Result.failure(
+            HttpException(Response.error<Any>(422, """{"error":"This photo does not look like the sky"}"""
+                .toResponseBody("application/json".toMediaType())))
+        )
+        // A real android.util.Log.w is not mocked in this unit test, and the eager upload's
+        // failure path logs the throwable it caught — same reason every other test in this file
+        // that can reach a `logWarning` call supplies a fake one.
+        val viewModel = CaptureViewModel(gateway, logWarning = noLogging) { Coordinates(-30.0, -51.0) }
+
+        viewModel.onPhotoTaken(jpeg())
+        advanceUntilIdle()
+
+        assertNotNull(viewModel.state.value.errorMessage)
+        assertNull(viewModel.state.value.uploadedPhotoUrl)
+        // Not submitting, not saved — the user can simply take another photo.
+        assertFalse(viewModel.state.value.submitting)
+    }
+
+    @Test
+    fun `a retake abandons the previous upload`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway()
+        val gate = CompletableDeferred<Unit>()
+        gateway.uploadGate = gate
+        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0, -51.0) }
+
+        val first = jpeg("first.jpg")
+        viewModel.onPhotoTaken(first)
+        val second = jpeg("second.jpg")
+        viewModel.onPhotoTaken(second)
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        // The path from the abandoned upload must never be cached against the photo on screen:
+        // saving it would file the capture under an image the user cannot see any more.
+        assertEquals(second, viewModel.state.value.photoFile)
+    }
+
     @Test
     fun `refuses to submit without a title`() = runTest(dispatcher) {
         val gateway = FakeCaptureGateway()
@@ -99,7 +201,10 @@ class CaptureViewModelTest {
         advanceUntilIdle()
 
         assertEquals("Falta o título e a descrição", viewModel.state.value.errorMessage?.title)
-        assertEquals(0, gateway.uploadedFiles.size)
+        // Task 8: the eager upload fires from onPhotoTaken alone, before submit's own validation
+        // ever runs, so it happens here regardless of the missing title. What submit's guard
+        // still owns — and what this test is really about — is that no event is ever created.
+        assertEquals(1, gateway.uploadedFiles.size)
         assertEquals(0, gateway.createdRequests.size)
     }
 
@@ -122,7 +227,9 @@ class CaptureViewModelTest {
         advanceUntilIdle()
 
         assertEquals("Falta o título e a descrição", viewModel.state.value.errorMessage?.title)
-        assertEquals(0, gateway.uploadedFiles.size)
+        // Task 8: same reasoning as the title test above — the eager upload does not care about
+        // form validity, only submit's guard does.
+        assertEquals(1, gateway.uploadedFiles.size)
         assertEquals(0, gateway.createdRequests.size)
     }
 
@@ -162,7 +269,10 @@ class CaptureViewModelTest {
     @Test
     fun `does not create the event when the upload fails`() = runTest(dispatcher) {
         val gateway = FakeCaptureGateway(uploadResult = Result.failure(IOException("no network")))
-        val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0346, -51.2177) }
+        // Task 8: onPhotoTaken's eager upload fails here too, and its failure path logs the
+        // throwable — a real android.util.Log.w is not mocked in this unit test, so this needs
+        // the same fake logger every other test that can reach a `logWarning` call already uses.
+        val viewModel = CaptureViewModel(gateway, logWarning = noLogging) { Coordinates(-30.0346, -51.2177) }
 
         viewModel.refreshLocation()
         advanceUntilIdle()
@@ -479,7 +589,13 @@ class CaptureViewModelTest {
         advanceUntilIdle()
 
         assertEquals(second, viewModel.state.value.photoFile)
-        assertNull(viewModel.state.value.uploadedPhotoUrl)
+        // Task 8: `onPhotoTaken(second)` starts its own eager upload, and `SuspendingUploadGateway`
+        // only parks the *first* call it ever sees — so this second upload resolves immediately,
+        // within the same advanceUntilIdle, to its own (correct) path. That is not the stale
+        // "first.jpg" result leaking through; it is what the second, legitimate eager upload
+        // actually earned. What must never happen — and what the rest of this test's assertions
+        // guard — is `first.jpg`'s path landing here or a create firing for it.
+        assertEquals("/api/photos/second.jpg", viewModel.state.value.uploadedPhotoUrl)
     }
 
     /**
@@ -1030,8 +1146,9 @@ class CaptureViewModelTest {
 class FakeCaptureGateway(
     // A relative path, because that is what the real endpoint returns. A fake that hands back
     // an absolute CDN URL would let the ViewModel pass a test it fails against the server,
-    // which rejects anything outside `^/api/photos/...` (Task 7).
-    private val uploadResult: Result<String> = Result.success("/api/photos/uploaded.jpg"),
+    // which rejects anything outside `^/api/photos/...` (Task 7). `var` so a test can swap in a
+    // failure after construction, for an eager upload that fails once the photo is taken.
+    var uploadResult: Result<String> = Result.success("/api/photos/uploaded.jpg"),
     // Set to open the window that orphans a JPEG: the upload lands, the create does not, and the
     // photo on the server is now referenced by nothing. `var` so a test can also close the window
     // again and watch the retry succeed.
@@ -1059,8 +1176,15 @@ class FakeCaptureGateway(
     /** Set to make the silent discard fail. The record then survives on the server. */
     var deleteFailure: Throwable? = null
 
+    /**
+     * Parks [uploadPhoto] until a test completes it, so a retake can be driven *while* the eager
+     * upload this fake would otherwise resolve instantly is still in flight.
+     */
+    var uploadGate: CompletableDeferred<Unit>? = null
+
     override suspend fun uploadPhoto(file: File): Result<String> {
         uploadedFiles += file
+        uploadGate?.await()
         return uploadResult
     }
 

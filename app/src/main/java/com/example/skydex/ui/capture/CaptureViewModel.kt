@@ -15,7 +15,10 @@ import com.example.skydex.ui.common.toUiMessage
 import com.example.skydex.ui.components.CaptureReward
 import com.example.skydex.ui.components.CaptureRewardBonus
 import com.example.skydex.util.Coordinates
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -141,6 +144,18 @@ class CaptureViewModel(
      */
     private var profileBefore: ProfileResponse? = null
 
+    /**
+     * An upload started by [onPhotoTaken], paired with the file it is carrying.
+     *
+     * The file is held alongside the job and not inferred from state, because state moves: a
+     * retake replaces [CaptureUiState.photoFile] while this job is still in flight, and matching
+     * on identity is what stops [submit] adopting a path that belongs to a photo the user has
+     * already replaced.
+     */
+    private class PendingUpload(val file: File, val job: Deferred<Result<String>>)
+
+    private var pendingUpload: PendingUpload? = null
+
     init {
         // Fire-and-forget, and never surfaced. It runs while the user is still framing a photo, so
         // it has minutes of head start on the moment it feeds, and if it fails the capture flow
@@ -156,8 +171,56 @@ class CaptureViewModel(
     fun onDescriptionChanged(value: String) =
         _state.update { it.copy(description = value, errorMessage = null) }
 
-    fun onPhotoTaken(file: File) =
+    /**
+     * Records the new photo and starts uploading it immediately.
+     *
+     * ## Why the upload does not wait for Save
+     *
+     * The backend runs the vision model inside `POST /api/photos`, and a photo it does not believe
+     * is the sky comes back 422. Uploading at Save time would put that rejection *after* the user
+     * had written a title and a description — the moment they can least afford to be told to
+     * start over. Firing here puts the round-trip inside the seconds they spend typing, so the
+     * answer is usually already in by the time they reach the button.
+     *
+     * The failure is shown but nothing else happens: no navigation, no blocked form, no retry
+     * loop. The recovery is "take another photo", which the screen already offers.
+     */
+    fun onPhotoTaken(file: File) {
+        // The previous job is not cancelled. It is already in flight, cancelling buys nothing the
+        // identity check below does not, and a cancelled `async` whose result is never awaited
+        // reports as an unhandled failure in some coroutine configurations.
         _state.update { it.copy(photoFile = file, uploadedPhotoUrl = null, errorMessage = null) }
+
+        val job = viewModelScope.async { captures.uploadPhoto(file) }
+        pendingUpload = PendingUpload(file, job)
+
+        viewModelScope.launch {
+            val result = try {
+                job.await()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+
+            // Every write below is conditional on this still being the photo on screen. Between
+            // the launch and here sits a whole network round-trip the user can retake during.
+            result
+                .onSuccess { url ->
+                    _state.update { if (it.photoFile == file) it.copy(uploadedPhotoUrl = url) else it }
+                }
+                .onFailure { failure ->
+                    logWarning(TAG, "Eager photo upload failed", failure)
+                    _state.update {
+                        if (it.photoFile == file) {
+                            it.copy(errorMessage = failure.toUiMessage(ErrorContext.PHOTO_UPLOAD))
+                        } else {
+                            it
+                        }
+                    }
+                }
+        }
+    }
 
     /**
      * Claims the one screen-driven initial location request, returning `true` exactly once per
@@ -220,8 +283,19 @@ class CaptureViewModel(
             // the client has no way to take it back. That is post-MVP backlog item #13 (orphaned
             // JPEG cleanup), which is a server-side sweep by design. All this cache can do, and
             // does, is stop one user tapping Save three times from becoming three orphans.
+            // Three ways to have a photo path here, in order of preference: one the eager upload
+            // already finished, one it is still working on, or — only if there is no job at all,
+            // which a normal flow cannot produce — a fresh upload started right now.
             val photoUrl = current.uploadedPhotoUrl ?: run {
-                val uploaded = captures.uploadPhoto(photoFile)
+                val pending = pendingUpload?.takeIf { it.file == photoFile }
+                val uploaded = try {
+                    pending?.job?.await() ?: captures.uploadPhoto(photoFile)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Result.failure(e)
+                }
+
                 uploaded.exceptionOrNull()?.let { failure ->
                     _state.update {
                         it.copy(
@@ -231,6 +305,7 @@ class CaptureViewModel(
                     }
                     return@launch
                 }
+
                 // Conditional, because this write lands *after* a suspension the user can act
                 // during: "Tirar Outra Foto" stays tappable for the frame in which the submit
                 // starts, and `onPhotoTaken` clearing the cache is worthless if the coroutine that
@@ -283,6 +358,15 @@ class CaptureViewModel(
                     // only be called once, and `toUiMessage` below is the one caller that does.
                     val rejected = failure.httpStatusCode == 400
 
+                    // A 400 invalidates the path, but not the `pendingUpload` job that produced
+                    // it: that job already completed, and `Deferred.await()` on a completed job
+                    // just replays its cached result. Left alone, the next submit's fallback would
+                    // find this same (still-matching-by-file) pending job, "await" it again, and
+                    // resurrect the very path the server just refused — forever. Dropping the
+                    // holder here, guarded the same way as every other write in this class, forces
+                    // the next attempt down the "no job at all" branch, which re-uploads for real.
+                    if (rejected && pendingUpload?.file == photoFile) pendingUpload = null
+
                     _state.update { s ->
                         s.copy(
                             submitting = false,
@@ -327,17 +411,20 @@ class CaptureViewModel(
      * The position is deliberately kept: the user has not moved, the fix is still valid, and
      * re-acquiring it would put a spinner between them and their next shot for no gain.
      */
-    fun startNewCapture() = _state.update {
-        it.copy(
-            title = "",
-            description = "",
-            photoFile = null,
-            uploadedPhotoUrl = null,
-            submitting = false,
-            saved = false,
-            reward = null,
-            errorMessage = null
-        )
+    fun startNewCapture() {
+        pendingUpload = null
+        _state.update {
+            it.copy(
+                title = "",
+                description = "",
+                photoFile = null,
+                uploadedPhotoUrl = null,
+                submitting = false,
+                saved = false,
+                reward = null,
+                errorMessage = null
+            )
+        }
     }
 
     /**
