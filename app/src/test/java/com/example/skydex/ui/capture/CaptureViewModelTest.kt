@@ -1,13 +1,11 @@
 package com.example.skydex.ui.capture
 
-import androidx.lifecycle.ViewModelStore
 import com.example.skydex.data.remote.dto.BadgeResponse
 import com.example.skydex.data.remote.dto.CreateWeatherEventRequest
 import com.example.skydex.data.remote.dto.ProfileResponse
 import com.example.skydex.data.remote.dto.UserSummary
 import com.example.skydex.data.remote.dto.WeatherEventResponse
 import com.example.skydex.ui.common.LogWarning
-import com.example.skydex.ui.common.RecordingLogWarning
 import com.example.skydex.ui.common.noLogging
 import com.example.skydex.util.Coordinates
 import kotlinx.coroutines.CompletableDeferred
@@ -765,153 +763,47 @@ class CaptureViewModelTest {
     }
 
     // -----------------------------------------------------------------------------------------
-    // The silent discard of an unconfirmed capture
+    // Keeping an unconfirmed capture instead of deleting it
     // -----------------------------------------------------------------------------------------
 
     /**
-     * An unconfirmed capture must not stay on the server.
+     * The behaviour this whole task exists to remove. The app used to send `DELETE api/events/{id}`
+     * for any capture that came back UNCONFIRMED, on the theory that a machine's opinion of a
+     * photograph was reason enough to destroy it with no explanation and nothing the user could do
+     * about it. That was the wrong call — the model may be the one that is wrong — so the record
+     * now survives, exactly like a confirmed one, and the reward overlay carries the reason instead.
      *
-     * The backend stores every capture and only *then* reports its verdict, so an UNCONFIRMED one
-     * exists as a row worth no XP, counting towards no species, that the backend will never
-     * re-validate. Leaving it would put a permanent, unexplainable entry in Meus Registros next to
-     * the captures the user actually earned, so the client takes it back immediately.
-     *
-     * Asserted on the id off the create response, not on a count alone: deleting *something* is not
-     * the requirement, deleting the capture that was just refused is.
+     * `CaptureGateway` no longer declares `delete` at all, which is the stronger guarantee behind
+     * this test: a regression that tried to discard a capture again would fail to compile, not just
+     * fail an assertion.
      */
     @Test
-    fun `an unconfirmed capture is deleted immediately`() = runTest(dispatcher) {
-        val gateway = FakeCaptureGateway(confirmed = false)
+    fun `keeps an unconfirmed capture instead of deleting it`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway(confirmed = false, unconfirmedReason = "PHOTO_CONTRADICTS_WEATHER")
         val viewModel = readyToSubmit(gateway)
 
         viewModel.submit()
         advanceUntilIdle()
 
-        assertEquals(
-            listOf("00000000-0000-0000-0000-000000000001"),
-            gateway.deletedIds
-        )
+        assertTrue(viewModel.state.value.saved)
     }
 
     /**
-     * The other half of the rule, and the one that would be catastrophic to get wrong: a CONFIRMED
-     * capture is the thing the whole app exists to produce. A discard that fired on the wrong branch
-     * would delete the user's collection one entry at a time, silently, with a celebration on screen
-     * while it happened.
+     * The reason travels from the backend response all the way to the reward the screen renders,
+     * so `CaptureRewardOverlay.reasonCopyFor` has something specific to say instead of one generic
+     * "não foi confirmado" for every case.
      */
     @Test
-    fun `a confirmed capture is never deleted`() = runTest(dispatcher) {
-        val gateway = FakeCaptureGateway(confirmed = true)
+    fun `carries the reason into the reward overlay`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway(confirmed = false, unconfirmedReason = "MOCK_LOCATION")
         val viewModel = readyToSubmit(gateway)
 
         viewModel.submit()
         advanceUntilIdle()
 
-        assertTrue(
-            "a confirmed capture must survive",
-            gateway.deletedIds.isEmpty()
-        )
-    }
-
-    /**
-     * Silent means silent. The discard is a request the user never made, about a record they were
-     * never shown, and there is nothing they could do about either outcome — so neither its success
-     * nor its failure may reach the screen.
-     *
-     * The failure path is the strict one: the DELETE is refused, the record survives on the server
-     * (the accepted degradation), and the reward the user is looking at must be untouched — no
-     * error notice, no lost XP line, no state change at all. The cause goes to `logWarning` and
-     * nowhere else.
-     */
-    @Test
-    fun `a failed discard changes nothing the user can see`() = runTest(dispatcher) {
-        val logWarning = RecordingLogWarning()
-        val gateway = FakeCaptureGateway(confirmed = false).apply {
-            deleteFailure = IOException("delete rejected")
-        }
-        val viewModel = readyToSubmit(gateway, logWarning = logWarning)
-
-        viewModel.submit()
-        advanceUntilIdle()
-
-        val state = viewModel.state.value
-        assertNull("a failed discard must not surface an error", state.errorMessage)
-        assertTrue("the capture really was stored; the guard stays latched", state.saved)
-        assertNotNull("the reward moment must survive a failed discard", state.reward)
-        assertFalse(state.reward!!.confirmed)
-        assertEquals(0, state.reward!!.xpAwarded)
-        assertFalse("no spinner may be left behind", state.submitting)
-
-        // It was attempted exactly once — no retry loop behind a screen the user cannot act on.
-        assertEquals(1, gateway.deletedIds.size)
-
-        // And the cause is not lost, it is just not the user's problem.
-        val warning = logWarning.warnings.single()
-        assertEquals("delete rejected", warning.cause.message)
-        // `LogWarning`'s contract: name the operation, never its subject. An id in logcat is PII
-        // adjacent and adds nothing a throwable does not already say.
-        assertFalse(
-            "the capture id must not reach logcat",
-            warning.message.contains("00000000-0000-0000-0000-000000000001")
-        )
-    }
-
-    /**
-     * The discard must not stand between the user and the overlay. It is launched after the state
-     * update that puts the reward on screen, so even a DELETE that never answers leaves the peak
-     * moment fully rendered — the same non-blocking contract the profile enrichment has.
-     */
-    @Test
-    fun `the reward is on screen before the discard answers`() = runTest(dispatcher) {
-        val gateway = GatedDeleteGateway(FakeCaptureGateway(confirmed = false))
-        val viewModel = readyToSubmit(gateway)
-
-        viewModel.submit()
-        advanceUntilIdle() // the delete is now parked inside the gateway
-
-        val reward = viewModel.state.value.reward
-        assertNotNull("the celebration must not wait on the discard", reward)
-        assertFalse(reward!!.confirmed)
-        assertNull(viewModel.state.value.errorMessage)
-
-        gateway.releaseDelete()
-        advanceUntilIdle()
-
-        assertEquals(1, gateway.deletedIds.size)
-    }
-
-    /**
-     * The coroutine-scope decision, made testable.
-     *
-     * The discard fires at the exact instant the screen becomes dismissable: the overlay is up, and
-     * "Ver meus registros" (or the back gesture) pops the Capture destination, clearing this
-     * ViewModel and cancelling `viewModelScope`. A plain `viewModelScope.launch` would therefore
-     * drop the DELETE precisely on the fast tap — the most likely case, not an edge one.
-     *
-     * `CaptureViewModel.discardUnconfirmed` detaches the job with [kotlinx.coroutines.NonCancellable]
-     * so the request outlives the screen. This is that guarantee, driven through the real
-     * [ViewModelStore.clear] rather than a stand-in, because `ViewModel.clear()` is what actually
-     * cancels the scope on device.
-     */
-    @Test
-    fun `the discard survives the user leaving the screen`() = runTest(dispatcher) {
-        val gateway = GatedDeleteGateway(FakeCaptureGateway(confirmed = false))
-        val viewModel = readyToSubmit(gateway)
-
-        viewModel.submit()
-        advanceUntilIdle() // the delete is in flight, parked inside the gateway
-
-        // Navigating away: the Capture destination is popped and its ViewModel cleared.
-        ViewModelStore().apply { put("capture", viewModel) }.clear()
-
-        gateway.releaseDelete()
-        advanceUntilIdle()
-
-        assertEquals(
-            "the record must still be taken back after the screen is gone",
-            listOf("00000000-0000-0000-0000-000000000001"),
-            gateway.deletedIds
-        )
+        val reward = viewModel.state.value.reward!!
+        assertFalse(reward.confirmed)
+        assertEquals("MOCK_LOCATION", reward.unconfirmedReason)
     }
 
     /**
@@ -1142,17 +1034,18 @@ class FakeCaptureGateway(
      * cannot produce.
      */
     var confirmed: Boolean = true,
-    var rarity: String = "RARE"
+    var rarity: String = "RARE",
+    /**
+     * The backend's `unconfirmedReason` enum name to echo back on an UNCONFIRMED response, or
+     * `null`. Ignored when [confirmed] is `true` — the server never sends a reason on a confirmed
+     * capture, and a fake that could produce that pair would let a test pass on a combination the
+     * real API cannot return.
+     */
+    var unconfirmedReason: String? = null
 ) : CaptureGateway {
 
     val uploadedFiles = mutableListOf<File>()
     val createdRequests = mutableListOf<CreateWeatherEventRequest>()
-
-    /** Ids handed to [delete], in order. Empty is the assertion that nothing was taken back. */
-    val deletedIds = mutableListOf<String>()
-
-    /** Set to make the silent discard fail. The record then survives on the server. */
-    var deleteFailure: Throwable? = null
 
     /**
      * Parks [uploadPhoto] until a test completes it, so a retake can be driven *while* the eager
@@ -1164,11 +1057,6 @@ class FakeCaptureGateway(
         uploadedFiles += file
         uploadGate?.await()
         return uploadResult
-    }
-
-    override suspend fun delete(id: String): Result<Unit> {
-        deletedIds += id
-        return deleteFailure?.let { Result.failure(it) } ?: Result.success(Unit)
     }
 
     override suspend fun create(request: CreateWeatherEventRequest): Result<WeatherEventResponse> {
@@ -1192,6 +1080,7 @@ class FakeCaptureGateway(
                 phenomenonName = "Tempestade com Trovões",
                 rarity = rarity,
                 validationStatus = if (confirmed) "CONFIRMED" else "UNCONFIRMED",
+                unconfirmedReason = if (confirmed) null else unconfirmedReason,
                 xpAwarded = if (confirmed) XP_BY_RARITY.getValue(rarity) else 0
             )
         )
@@ -1271,30 +1160,4 @@ private class SuspendingUploadGateway(
 
     override suspend fun create(request: CreateWeatherEventRequest): Result<WeatherEventResponse> =
         creates.create(request)
-
-    override suspend fun delete(id: String): Result<Unit> = creates.delete(id)
-}
-
-/**
- * A gateway whose `delete` really suspends, so a test can look at the screen *while* the silent
- * discard is still in flight.
- *
- * [FakeCaptureGateway.delete] answers without ever hitting a suspension point, which makes the
- * discard indistinguishable from a blocking one from the ViewModel's side — exactly the property
- * under test here.
- */
-private class GatedDeleteGateway(
-    private val delegate: FakeCaptureGateway
-) : CaptureGateway by delegate {
-
-    private val gate = CompletableDeferred<Unit>()
-
-    val deletedIds: List<String> get() = delegate.deletedIds
-
-    fun releaseDelete() = gate.complete(Unit)
-
-    override suspend fun delete(id: String): Result<Unit> {
-        gate.await()
-        return delegate.delete(id)
-    }
 }

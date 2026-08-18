@@ -17,7 +17,6 @@ import com.example.skydex.ui.components.CaptureRewardBonus
 import com.example.skydex.util.Coordinates
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -104,9 +103,11 @@ private val PhotoReplacedMidUpload = UiMessage(
  *   level-up / new-badge half of the reward moment. See [profileBefore] and [loadBonus] for the
  *   contract; `null` disables the feature entirely and every other behaviour of this ViewModel is
  *   identical with or without it.
- * @param logWarning where failures that are deliberately never shown to the user go instead. Used
- *   by [discardUnconfirmed] and nowhere else; defaults to the real logcat call, so only tests pass
- *   it.
+ * @param logWarning captures the technical cause behind a failure that is otherwise summarised in
+ *   pt-BR for the screen. Used by [onPhotoTaken]'s eager-upload failure path, where the raw
+ *   throwable never reaches [CaptureUiState.errorMessage] — only its translated [UiMessage] does —
+ *   so this is where the original cause is preserved for anyone debugging a report of the copy
+ *   alone; defaults to the real logcat call, so only tests pass it.
  * @param locationProvider one GPS fix, or `null` if there is none to be had.
  *
  * The optional parameters sit in the **middle** on purpose, which is unusual enough to explain.
@@ -343,10 +344,8 @@ class CaptureViewModel(
                     _state.update { s ->
                         s.copy(submitting = false, saved = true, reward = reward)
                     }
-                    // Both of these are launched *after* the state update above, never before it,
-                    // and neither is awaited: the overlay is already on screen by the time either
-                    // request leaves the device.
-                    if (!reward.confirmed) discardUnconfirmed(event.id)
+                    // Launched *after* the state update above, never before it, and not awaited:
+                    // the overlay is already on screen by the time the request leaves the device.
                     loadBonus()
                 }
                 .onFailure { failure ->
@@ -440,73 +439,9 @@ class CaptureViewModel(
         phenomenonName = event.phenomenonName,
         rarity = event.rarity,
         confirmed = event.validationStatus.equals(CONFIRMED_STATUS, ignoreCase = true),
-        xpAwarded = event.xpAwarded
+        xpAwarded = event.xpAwarded,
+        unconfirmedReason = event.unconfirmedReason
     )
-
-    /**
-     * Takes back a capture the backend stored but did not confirm.
-     *
-     * ## Why the record goes
-     *
-     * The collection is the product. A row the backend could not match against the region's real
-     * weather is worth no XP, counts towards no species and cannot be un-rejected — the backend
-     * never re-validates a stored capture — so leaving it in Meus Registros gives the user a
-     * permanent, unexplainable entry among the ones they earned. `DELETE api/events/{id}` fires the
-     * moment `validationStatus` comes back as anything other than `CONFIRMED`.
-     *
-     * ## Why it is silent
-     *
-     * There is nothing here the user can act on. A confirmation prompt would ask them to approve
-     * the removal of something they never knew existed, and an error notice would report the
-     * failure of a request they never asked for. So this reports **nothing**: no [UiMessage], no
-     * state change, no effect on [CaptureUiState.reward]. `CaptureRewardOverlay`'s unconfirmed copy
-     * carries the whole user-visible half of this — it says the capture was not confirmed, and it
-     * deliberately does not claim the photo is stored anywhere.
-     *
-     * ## When it fails
-     *
-     * A failed DELETE — offline, a 500, a 403, a request that never left — is written to
-     * [logWarning] and dropped. No retry, no queue, no error state, no blocked navigation. The
-     * consequence is that the unconfirmed record **survives on the server** and shows up in Meus
-     * Registros like any other. That is the accepted degradation: an orphan row costs the user a
-     * confusing entry, whereas a retry loop or a surfaced failure would cost them the peak moment
-     * of the app.
-     *
-     * ## Why it is [NonCancellable]
-     *
-     * This fires at the exact instant `CaptureScreen` becomes dismissable — the overlay is up, and
-     * "Ver meus registros" or the back gesture pops the Capture destination and clears this
-     * ViewModel, cancelling `viewModelScope` mid-flight. A plain `viewModelScope.launch` would
-     * therefore drop the DELETE precisely in the case it is most likely to be needed, on a fast tap.
-     *
-     * Detaching the job from the scope's [kotlinx.coroutines.Job] is the deliberate choice: the
-     * request outlives the screen and completes (or fails) on its own. The price is that this
-     * coroutine holds a reference to the ViewModel for the length of one HTTP round-trip after
-     * `onCleared`, bounded by OkHttp's timeouts — a few seconds of retained memory, no observable
-     * behaviour, and nothing it can write to a screen that is gone, since it touches no state. It
-     * still dies with the process; a DELETE interrupted by the app being killed leaves the record
-     * behind, which is the same accepted degradation as a failed one above.
-     *
-     * ## Known limitation
-     *
-     * This is a forward-only rule. Unconfirmed captures already stored before it shipped stay in
-     * Meus Registros untouched, and that is on purpose — a sweep of existing records on opening the
-     * list was considered and rejected. There is no client-side backfill to write here.
-     */
-    private fun discardUnconfirmed(id: String) {
-        viewModelScope.launch(NonCancellable) {
-            // `runCatching` on top of the gateway's own `Result`: a gateway that throws instead of
-            // returning a failure would otherwise escape a coroutine with no parent to hand it to
-            // and take the process down — for a request the user never made. Catching
-            // CancellationException is normally a bug; here there is nothing to cancel this job.
-            val failure = runCatching { captures.delete(id) }
-                .fold(onSuccess = { it.exceptionOrNull() }, onFailure = { it })
-
-            // No id in the message, in line with `LogWarning`'s contract: the throwable is what
-            // separates offline from a 403, and the identifier only leaks into bug reports.
-            failure?.let { logWarning(TAG, "discarding an unconfirmed capture failed", it) }
-        }
-    }
 
     /**
      * Fills in the level-up and new-badge lines, if there are any and if we can prove it.

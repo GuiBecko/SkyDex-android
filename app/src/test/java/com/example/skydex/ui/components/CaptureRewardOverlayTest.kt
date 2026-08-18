@@ -28,10 +28,9 @@ class CaptureRewardOverlayTest {
     /**
      * The branch that must not celebrate.
      *
-     * An unconfirmed capture earned nothing and, since the client now takes it back off the server
-     * the moment the verdict lands, it is not even kept. Drawing the XP number or the rarity pill
-     * would be showing a prize for it — and rarity is the reward axis, so naming "LENDÁRIO" beside
-     * a capture worth zero reads as a prize withdrawn.
+     * An unconfirmed capture earned nothing, even though it is kept rather than deleted. Drawing
+     * the XP number or the rarity pill would be showing a prize for it — and rarity is the reward
+     * axis, so naming "LENDÁRIO" beside a capture worth zero reads as a prize withdrawn.
      */
     @Test
     fun `an unconfirmed capture shows no XP and no rarity`() {
@@ -43,12 +42,11 @@ class CaptureRewardOverlayTest {
     }
 
     /**
-     * The affordance has to be as truthful as the copy.
+     * The affordance has to match the copy's priorities, even though the record is kept now.
      *
-     * The unconfirmed record is deleted the moment the verdict lands, so a filled "Ver meus
-     * registros" would send the user hunting through a list that provably does not contain it —
-     * implying exactly the claim the copy above it was rewritten to stop making. "Registrar outro"
-     * is the only action that can help this user, and the copy already ends by pointing at it.
+     * "Ver meus registros" would send the user to look at a row worth no XP and no species —
+     * true, but not the payoff this screen exists to deliver. "Registrar outro" is the action that
+     * can actually help, and the copy already ends by pointing at it.
      */
     @Test
     fun `an unconfirmed capture leads with Registrar outro`() {
@@ -102,5 +100,33 @@ class CaptureRewardOverlayTest {
         assertTrue("it is still a confirmation, and it still says so", presentation.celebrates)
         assertFalse("no +0 XP", presentation.showsXp)
         assertTrue("the species really was confirmed, so its rarity is honest", presentation.showsRarity)
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // reasonCopyFor — the sentence explaining an unconfirmed capture
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * Each of the backend's three reasons must produce its own, distinguishable sentence: the
+     * whole point of naming a reason is that it implies a different next action, and a client that
+     * collapsed all three into one generic line would throw that away.
+     */
+    @Test
+    fun `each reason gets its own sentence`() {
+        assertTrue(reasonCopyFor("PHOTO_CONTRADICTS_WEATHER").contains("foto"))
+        assertTrue(reasonCopyFor("MOCK_LOCATION").contains("localização"))
+        assertTrue(reasonCopyFor("IMPLAUSIBLE_TRAVEL").contains("distante"))
+    }
+
+    /**
+     * A reason from a newer backend must not render as an empty line or as the enum name: this
+     * client may be older than the backend it talks to, and a fourth reason must degrade to a
+     * vague-but-safe sentence rather than a crash or a leaked English constant on a pt-BR screen.
+     */
+    @Test
+    fun `an unknown or absent reason still says something useful`() {
+        assertTrue(reasonCopyFor(null).isNotBlank())
+        assertTrue(reasonCopyFor("SOMETHING_NEW").isNotBlank())
+        assertFalse(reasonCopyFor("SOMETHING_NEW").contains("SOMETHING_NEW"))
     }
 }
