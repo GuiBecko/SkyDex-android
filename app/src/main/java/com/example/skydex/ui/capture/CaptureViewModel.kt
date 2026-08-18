@@ -44,7 +44,6 @@ data class CaptureUiState(
     val uploadedPhotoUrl: String? = null,
     val coordinates: Coordinates? = null,
     val locating: Boolean = false,
-    val phenomenon: String? = null,
     val submitting: Boolean = false,
     val saved: Boolean = false,
     /**
@@ -85,12 +84,6 @@ private val MissingPhoto = UiMessage(
 private val MissingPosition = UiMessage(
     title = "Não achamos onde você está",
     body = "Ative a localização do aparelho e tente de novo.",
-    tone = Tone.NOTICE
-)
-
-private val MissingPhenomenon = UiMessage(
-    title = "Falta escolher o fenômeno",
-    body = "Toque em uma das opções acima para dizer o que você registrou.",
     tone = Tone.NOTICE
 )
 
@@ -166,9 +159,6 @@ class CaptureViewModel(
     fun onPhotoTaken(file: File) =
         _state.update { it.copy(photoFile = file, uploadedPhotoUrl = null, errorMessage = null) }
 
-    fun onPhenomenonSelected(name: String) =
-        _state.update { it.copy(phenomenon = name, errorMessage = null) }
-
     /**
      * Claims the one screen-driven initial location request, returning `true` exactly once per
      * ViewModel — same reasoning as `HomeViewModel.shouldLoadOnEntry`: `CaptureScreen`'s
@@ -210,7 +200,6 @@ class CaptureViewModel(
             current.title.isBlank() || current.description.isBlank() -> MissingText
             current.photoFile == null -> MissingPhoto
             current.coordinates == null -> MissingPosition
-            current.phenomenon == null -> MissingPhenomenon
             else -> null
         }
         if (error != null) {
@@ -267,7 +256,6 @@ class CaptureViewModel(
                 photoUrl = photoUrl,
                 latitude = coordinates.latitude,
                 longitude = coordinates.longitude,
-                phenomenon = current.phenomenon!!,
                 locationIsMock = coordinates.isMock
             )
 
@@ -345,7 +333,6 @@ class CaptureViewModel(
             description = "",
             photoFile = null,
             uploadedPhotoUrl = null,
-            phenomenon = null,
             submitting = false,
             saved = false,
             reward = null,

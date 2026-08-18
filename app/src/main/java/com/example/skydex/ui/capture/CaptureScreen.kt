@@ -10,7 +10,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,7 +22,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -54,24 +52,6 @@ import com.example.skydex.util.Coordinates
 import com.example.skydex.util.LOCATION_PERMISSIONS
 import com.example.skydex.util.PhotoCaptureFiles
 import java.io.File
-
-/**
- * Hardcoded because the species catalog is a backend enum with no discovery endpoint in the MVP.
- * The names must match `Phenomenon` exactly — a drift here fails a capture with "Unknown
- * phenomenon". Exposing `GET /api/phenomena` and driving the chips from it is a small post-MVP
- * follow-up worth doing.
- */
-private val SPECIES = listOf(
-    "CLEAR_SKY" to "Céu Limpo",
-    "CLOUDS" to "Nublado",
-    "FOG" to "Nevoeiro Intenso",
-    "DRIZZLE" to "Garoa",
-    "RAIN" to "Chuva",
-    "RAIN_SHOWER" to "Pancada de Chuva",
-    "SNOW" to "Neve",
-    "THUNDERSTORM" to "Tempestade com Trovões",
-    "HAILSTORM" to "Tempestade Severa com Granizo"
-)
 
 /** Fixed because it frames a photo, not text — it does not grow with the system font scale. */
 private val PhotoPreviewHeight = 220.dp
@@ -171,7 +151,6 @@ fun CaptureScreen(
                 pendingPath = file.absolutePath
                 takePicture.launch(PhotoCaptureFiles.uriFor(context, file))
             },
-            onPhenomenonSelected = viewModel::onPhenomenonSelected,
             onTitleChanged = viewModel::onTitleChanged,
             onDescriptionChanged = viewModel::onDescriptionChanged,
             onRetryLocation = viewModel::refreshLocation,
@@ -215,7 +194,6 @@ private fun CaptureContent(
     state: CaptureUiState,
     permissionDenied: Boolean,
     onTakePhoto: () -> Unit,
-    onPhenomenonSelected: (String) -> Unit,
     onTitleChanged: (String) -> Unit,
     onDescriptionChanged: (String) -> Unit,
     onRetryLocation: () -> Unit,
@@ -275,28 +253,10 @@ private fun CaptureContent(
         }
 
         Text(
-            text = "Qual fenômeno?",
-            style = MaterialTheme.typography.titleMedium,
-            color = SkyDexPalette.colors.textPrimary
+            text = "O SkyDex identifica o fenômeno sozinho, comparando sua foto com o clima real do lugar.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = SkyDexPalette.colors.textSecondary
         )
-
-        // `FlowRow`, not the old `horizontalScroll`: nine chips in a single scrolling line put the
-        // last four off-screen with nothing to say they were there — no fade, no peeking chip, no
-        // indicator — so half the catalog was effectively invisible. Wrapping shows all nine at
-        // once and costs two extra rows.
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(SkyDexSpacing.sm),
-            verticalArrangement = Arrangement.spacedBy(SkyDexSpacing.sm)
-        ) {
-            SPECIES.forEach { (name, label) ->
-                FilterChip(
-                    selected = state.phenomenon == name,
-                    onClick = { onPhenomenonSelected(name) },
-                    label = { Text(label, style = MaterialTheme.typography.labelLarge) }
-                )
-            }
-        }
 
         OutlinedTextField(
             value = state.title,
@@ -381,8 +341,7 @@ private fun CaptureContent(
 private val previewState = CaptureUiState(
     title = "Tempestade sobre a Paulista",
     description = "Raios a cada poucos segundos, vento forte vindo do sul.",
-    coordinates = Coordinates(-23.55, -46.63),
-    phenomenon = "THUNDERSTORM"
+    coordinates = Coordinates(-23.55, -46.63)
 )
 
 @Composable
@@ -392,7 +351,6 @@ private fun CapturePreviewHost(darkTheme: Boolean, state: CaptureUiState, denied
             state = state,
             permissionDenied = denied,
             onTakePhoto = {},
-            onPhenomenonSelected = {},
             onTitleChanged = {},
             onDescriptionChanged = {},
             onRetryLocation = {},

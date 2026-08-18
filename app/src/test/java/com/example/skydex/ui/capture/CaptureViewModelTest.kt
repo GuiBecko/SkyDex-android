@@ -59,7 +59,6 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios sobre o bairro")
-        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(jpeg())
         viewModel.submit()
         advanceUntilIdle()
@@ -169,7 +168,6 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
-        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(jpeg())
         viewModel.submit()
         advanceUntilIdle()
@@ -194,7 +192,6 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
-        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(jpeg())
 
         // No advanceUntilIdle between them: this is the double tap, not two deliberate saves.
@@ -222,7 +219,6 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
-        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(jpeg())
         viewModel.submit()
         advanceUntilIdle()
@@ -248,7 +244,6 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
-        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(jpeg())
 
         viewModel.submit()
@@ -413,7 +408,6 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
-        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(jpeg())
         viewModel.submit()
         advanceUntilIdle()
@@ -444,7 +438,6 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
-        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(first)
         viewModel.submit()
         advanceUntilIdle()
@@ -477,7 +470,6 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
-        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(first)
         viewModel.submit()
         advanceUntilIdle() // the upload is now parked inside the gateway
@@ -507,7 +499,6 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
-        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(first)
         viewModel.submit()
         advanceUntilIdle()
@@ -563,37 +554,42 @@ class CaptureViewModelTest {
     }
 
     @Test
-    fun `refuses to submit without choosing a phenomenon`() = runTest(dispatcher) {
+    fun `the create request carries no phenomenon`() = runTest(dispatcher) {
         val gateway = FakeCaptureGateway()
         val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0346, -51.2177) }
 
         viewModel.refreshLocation()
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
-        viewModel.onDescriptionChanged("Raios")
+        viewModel.onDescriptionChanged("Raios sobre a cidade")
         viewModel.onPhotoTaken(jpeg())
+        advanceUntilIdle()
         viewModel.submit()
         advanceUntilIdle()
 
-        assertEquals("Falta escolher o fenômeno", viewModel.state.value.errorMessage?.title)
-        assertEquals(0, gateway.createdRequests.size)
+        // Nothing in the request names a species. The server reads the weather itself, and a
+        // field the client fills in is a field a modified client can lie in.
+        val sent = gateway.createdRequests.single()
+        assertEquals("Tempestade", sent.title)
+        assertEquals(-30.0346, sent.latitude, 0.0)
     }
 
     @Test
-    fun `sends the chosen phenomenon with the capture`() = runTest(dispatcher) {
+    fun `submits without the user ever choosing a species`() = runTest(dispatcher) {
         val gateway = FakeCaptureGateway()
         val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0346, -51.2177) }
 
         viewModel.refreshLocation()
         advanceUntilIdle()
-        viewModel.onTitleChanged("Tempestade")
-        viewModel.onDescriptionChanged("Raios")
-        viewModel.onPhenomenonSelected("THUNDERSTORM")
+        viewModel.onTitleChanged("Céu")
+        viewModel.onDescriptionChanged("Sem nuvem nenhuma")
         viewModel.onPhotoTaken(jpeg())
+        advanceUntilIdle()
         viewModel.submit()
         advanceUntilIdle()
 
-        assertEquals("THUNDERSTORM", gateway.createdRequests.single().phenomenon)
+        assertTrue(viewModel.state.value.saved)
+        assertNull(viewModel.state.value.errorMessage)
     }
 
     /**
@@ -612,7 +608,6 @@ class CaptureViewModelTest {
         advanceUntilIdle()
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
-        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(jpeg())
         viewModel.submit()
         advanceUntilIdle()
@@ -934,7 +929,6 @@ class CaptureViewModelTest {
         assertEquals("", state.title)
         assertEquals("", state.description)
         assertNull(state.photoFile)
-        assertNull(state.phenomenon)
         // The photo the server has already consumed must not be cited again — citing it is a
         // guaranteed 400 ("This photo has already been used for a capture").
         assertNull(state.uploadedPhotoUrl)
@@ -943,7 +937,6 @@ class CaptureViewModelTest {
         // And the guard really is open: a second, complete capture goes through.
         viewModel.onTitleChanged("Neve")
         viewModel.onDescriptionChanged("Flocos grossos")
-        viewModel.onPhenomenonSelected("SNOW")
         viewModel.onPhotoTaken(jpeg("second.jpg"))
         viewModel.submit()
         advanceUntilIdle()
@@ -992,7 +985,6 @@ class CaptureViewModelTest {
         advanceUntilIdle() // also lets the baseline profile read land, when there is one
         viewModel.onTitleChanged("Tempestade")
         viewModel.onDescriptionChanged("Raios")
-        viewModel.onPhenomenonSelected("THUNDERSTORM")
         viewModel.onPhotoTaken(jpeg())
         return viewModel
     }
@@ -1091,7 +1083,10 @@ class FakeCaptureGateway(
                 longitude = request.longitude,
                 userId = "00000000-0000-0000-0000-000000000002",
                 authorName = "Test Pilot",
-                phenomenon = request.phenomenon,
+                // The server reads the weather itself now (Task 7): the request carries no
+                // phenomenon for the fake to echo back, so this fixture picks one fixed species,
+                // matching the fixed `phenomenonName` below.
+                phenomenon = "THUNDERSTORM",
                 phenomenonName = "Tempestade com Trovões",
                 rarity = rarity,
                 validationStatus = if (confirmed) "CONFIRMED" else "UNCONFIRMED",
