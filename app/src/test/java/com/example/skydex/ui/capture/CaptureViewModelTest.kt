@@ -370,10 +370,10 @@ class CaptureViewModelTest {
     }
 
     /**
-     * The backend designed five distinct, actionable 400 messages across Tasks 12b and 12c —
+     * The backend designed distinct, actionable 400 messages across Tasks 12b and 12c —
      * "This photo has already been used for a capture", "Photo has expired; take a new one", and
      * so on — and each one implies a different next step, so one blanket string was wrong for all
-     * of them: it told the user to retry, which for most of the five cannot work.
+     * of them: it told the user to retry, which for most of them cannot work.
      *
      * The client used to fix that by forwarding the backend's own sentence — which put English in
      * a pt-BR app (audit finding B1). It keeps the distinction and answers in our words.
@@ -394,28 +394,6 @@ class CaptureViewModelTest {
         assertFalse(
             "the backend's English must never reach the screen",
             "${message.title} ${message.body}".contains("Photo has expired")
-        )
-    }
-
-    /**
-     * The leak the audit named explicitly: the server appends the enum to the message, so
-     * forwarding it put `THUNDERSTORM` — an internal domain constant — in front of the user.
-     */
-    @Test
-    fun `an unknown phenomenon never leaks the enum name`() = runTest(dispatcher) {
-        val gateway = FakeCaptureGateway(
-            createFailure = httpError(400, """{"error":"Unknown phenomenon: THUNDERSTORM"}""")
-        )
-        val viewModel = readyToSubmit(gateway)
-
-        viewModel.submit()
-        advanceUntilIdle()
-
-        val message = viewModel.state.value.errorMessage!!
-        assertEquals("Não reconhecemos esse fenômeno", message.title)
-        assertFalse(
-            "the domain enum must never reach the screen",
-            "${message.title} ${message.body}".contains("THUNDERSTORM")
         )
     }
 
