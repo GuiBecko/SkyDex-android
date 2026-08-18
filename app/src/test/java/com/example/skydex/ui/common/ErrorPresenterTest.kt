@@ -307,6 +307,10 @@ class ErrorPresenterTest {
     fun `a 503 on upload promises that waiting helps`() {
         val message = httpError(503, """{"error":"x"}""").toUiMessage(ErrorContext.PHOTO_UPLOAD)
 
+        // The title is the only string that distinguishes this branch from `unavailable`'s `else`,
+        // from `generic(PHOTO_UPLOAD)`, and from `ServerDown` — all three share this same body and
+        // action label, so asserting only on those would pass against any of them.
+        assertEquals("Não conseguimos analisar a foto agora", message.title)
         assertEquals("Tentar de novo", message.actionLabel)
         assertTrue(message.body, message.body.contains("instantes"))
     }

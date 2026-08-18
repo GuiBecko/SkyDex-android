@@ -311,9 +311,13 @@ private fun CaptureContent(
             }
         }
 
-        // Inline and non-destructive: the photo, the chips and everything typed stay on screen.
-        // Most of the capture 400s are only recoverable *because* the form is still there.
-        state.errorMessage?.let { message ->
+        // Inline and non-destructive: the photo and everything typed stay on screen. Most of the
+        // capture 400s are only recoverable *because* the form is still there.
+        //
+        // `photoMessage` takes priority: it names the more specific, more actionable problem (the
+        // photo itself), and `CaptureViewModel` keeps it alive through typing for exactly this
+        // moment — see `CaptureUiState.photoMessage`.
+        (state.photoMessage ?: state.errorMessage)?.let { message ->
             SkyDexNotice(message = message)
         }
 

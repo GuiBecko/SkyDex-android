@@ -65,7 +65,26 @@ data class CaptureUiState(
      * meaning drifting.
      */
     val reward: CaptureReward? = null,
-    val errorMessage: UiMessage? = null
+    val errorMessage: UiMessage? = null,
+    /**
+     * A rejection of the photo itself — the eager upload's 422/503, or the same failure replayed
+     * from `submit`'s cache — kept apart from [errorMessage] on purpose.
+     *
+     * [onTitleChanged] and [onDescriptionChanged] clear [errorMessage] on every keystroke, which is
+     * correct for [MissingText]: typing is exactly what resolves it. It is wrong for a photo the
+     * server rejected, since nothing about the title or the description can fix that, and Task 8
+     * fires the upload the moment the shutter closes specifically so the rejection lands *while the
+     * user is still typing* — the one moment [errorMessage] cannot be trusted to survive. Splitting
+     * the field is cheaper than teaching the text handlers which [UiMessage] instances are safe to
+     * clear, since a [UiMessage] carries no tag saying where it came from.
+     *
+     * Written only from [onPhotoTaken]'s failure branch and from `submit`'s fallback failure branch,
+     * both guarded the same way as every other write that lands after a suspension: only while
+     * [photoFile] is still the file the failure belongs to. Cleared only by [onPhotoTaken] — a
+     * retake is the one thing that actually invalidates a photo rejection — and by
+     * [CaptureViewModel.startNewCapture].
+     */
+    val photoMessage: UiMessage? = null
 )
 
 // Local validation and client-side races: no request was ever made, so there is no throwable for
@@ -167,6 +186,9 @@ class CaptureViewModel(
         }
     }
 
+    // Deliberately touch `errorMessage` only, never `photoMessage`: a keystroke resolves "falta o
+    // título e a descrição", it does not resolve a photo the server rejected. See
+    // `CaptureUiState.photoMessage`.
     fun onTitleChanged(value: String) = _state.update { it.copy(title = value, errorMessage = null) }
 
     fun onDescriptionChanged(value: String) =
@@ -190,7 +212,13 @@ class CaptureViewModel(
         // The previous job is not cancelled. It is already in flight, cancelling buys nothing the
         // identity check below does not, and a cancelled `async` whose result is never awaited
         // reports as an unhandled failure in some coroutine configurations.
-        _state.update { it.copy(photoFile = file, uploadedPhotoUrl = null, errorMessage = null) }
+        //
+        // `photoMessage` is cleared here too: a retake is the one action that actually invalidates
+        // a photo rejection, so this is the one place that message is allowed to disappear on its
+        // own rather than surviving until the user does something about it.
+        _state.update {
+            it.copy(photoFile = file, uploadedPhotoUrl = null, errorMessage = null, photoMessage = null)
+        }
 
         val job = viewModelScope.async { captures.uploadPhoto(file) }
         pendingUpload = PendingUpload(file, job)
@@ -214,7 +242,7 @@ class CaptureViewModel(
                     logWarning(TAG, "Eager photo upload failed", failure)
                     _state.update {
                         if (it.photoFile == file) {
-                            it.copy(errorMessage = failure.toUiMessage(ErrorContext.PHOTO_UPLOAD))
+                            it.copy(photoMessage = failure.toUiMessage(ErrorContext.PHOTO_UPLOAD))
                         } else {
                             it
                         }
@@ -297,12 +325,22 @@ class CaptureViewModel(
                     Result.failure(e)
                 }
 
+                // Guarded the same way as every other write below a suspension: `photoFile` can
+                // have moved on while this was awaited (either the pending job or a fresh upload
+                // just now), and this failure belongs to whichever file `submit` was called for,
+                // not to whatever is on screen by the time it resolves. `submitting` always
+                // releases regardless — the caller retook the shot and is not waiting on this
+                // capture any more, but the button must not stay stuck on "Salvando...".
                 uploaded.exceptionOrNull()?.let { failure ->
                     _state.update {
-                        it.copy(
-                            submitting = false,
-                            errorMessage = failure.toUiMessage(ErrorContext.PHOTO_UPLOAD)
-                        )
+                        if (it.photoFile == photoFile) {
+                            it.copy(
+                                submitting = false,
+                                photoMessage = failure.toUiMessage(ErrorContext.PHOTO_UPLOAD)
+                            )
+                        } else {
+                            it.copy(submitting = false)
+                        }
                     }
                     return@launch
                 }
@@ -373,7 +411,7 @@ class CaptureViewModel(
                             // pt-BR screen — audit finding B1, and in the "Unknown phenomenon:
                             // <ENUM>" case it leaked a domain enum name at the user. The
                             // presenter keeps what was right about that decision (Tasks 12b and
-                            // 12c wrote five *distinct* 400s and each implies a different next
+                            // 12c wrote four *distinct* 400s and each implies a different next
                             // step, so collapsing them into one "tente de novo" misleads) while
                             // answering in our own words.
                             errorMessage = failure.toUiMessage(ErrorContext.CAPTURE_SAVE),
@@ -411,6 +449,13 @@ class CaptureViewModel(
      * re-acquiring it would put a spinner between them and their next shot for no gain.
      */
     fun startNewCapture() {
+        // Not provably reachable today: `photoFile` becomes null in the same update below, and
+        // every write that reads `pendingUpload` is itself gated on `photoFile` matching a
+        // non-null file, so a job still in flight can never resurrect this holder once cleared.
+        // Kept anyway as a belt-and-braces reset rather than deleted as dead code: it is the one
+        // line that keeps that reasoning true if a future change ever loosens the gating on the
+        // other writes, and mutation-testing it away costs nothing today precisely because it is
+        // defensive, not because it is safe to remove.
         pendingUpload = null
         _state.update {
             it.copy(
@@ -421,7 +466,8 @@ class CaptureViewModel(
                 submitting = false,
                 saved = false,
                 reward = null,
-                errorMessage = null
+                errorMessage = null,
+                photoMessage = null
             )
         }
     }

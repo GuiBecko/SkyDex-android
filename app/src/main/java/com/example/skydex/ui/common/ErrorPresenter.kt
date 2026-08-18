@@ -453,10 +453,11 @@ private fun generic(context: ErrorContext): UiMessage = when (context) {
 /**
  * Case-insensitive substring match against the backend's envelope.
  *
- * Substring and not equality on purpose: `"Unknown phenomenon: THUNDERSTORM"` carries a suffix the
- * server appends, and a future rewording of a message's tail should not silently downgrade a
- * specific message to the generic one. `null` (unreadable body) never matches, which is what sends
- * the flow to the context fallback.
+ * Substring and not equality on purpose: a message like `"Photo has expired; take a new one"`
+ * carries a clause this file only needs a fragment of ("photo has expired"), and a future
+ * rewording of the rest of the sentence should not silently downgrade a specific message to the
+ * generic one. `null` (unreadable body) never matches, which is what sends the flow to the context
+ * fallback.
  */
 private fun String?.mentions(vararg needles: String): Boolean {
     val text = this?.lowercase() ?: return false

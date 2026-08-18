@@ -39,6 +39,7 @@ import com.example.skydex.ui.common.UiState
 import com.example.skydex.ui.components.CaptureImage
 import com.example.skydex.ui.components.SkyDexNotice
 import com.example.skydex.ui.components.SkyDexNoticeState
+import com.example.skydex.ui.components.reasonCopyFor
 import com.example.skydex.ui.theme.SkyDexPalette
 import com.example.skydex.ui.theme.SkyDexSpacing
 import com.example.skydex.ui.theme.SkyDexTheme
@@ -244,6 +245,12 @@ private fun CaptureDetailBody(
  *   app's settled amber register that says what happened, says it was not the user's fault, and
  *   says the record is safe. Shorter than the overlay's copy because by now the user is looking at
  *   the record that survived, not being told about it.
+ *
+ * The body reuses [reasonCopyFor] rather than one fixed sentence: a weather mismatch is only one of
+ * three reasons a capture can end up unconfirmed, and this page is the *permanent* record of the
+ * verdict — read far more times than the once-off reward overlay — so it is the more important
+ * place to name the actual problem instead of defaulting every capture to "the weather did not
+ * match", which is simply false for `MOCK_LOCATION` and `IMPLAUSIBLE_TRAVEL`.
  */
 @Composable
 private fun ValidationSection(capture: WeatherEventResponse) {
@@ -254,9 +261,9 @@ private fun ValidationSection(capture: WeatherEventResponse) {
             message = UiMessage(
                 title = "Não deu para confirmar o fenômeno",
                 // No promise of a re-check: the backend never re-validates a stored capture, and
-                // the overlay is careful not to imply one either.
-                body = "Comparamos sua foto com os dados meteorológicos da região e eles não " +
-                    "bateram, então este registro não valeu XP. Ele continua guardado do mesmo jeito.",
+                // the overlay is careful not to imply one either. `reasonCopyFor` also owns the
+                // "kept, no XP" framing already, and degrades safely on a null or unknown reason.
+                body = reasonCopyFor(capture.unconfirmedReason),
                 tone = Tone.NOTICE
             )
         )
@@ -464,6 +471,10 @@ private val previewUnconfirmed = previewConfirmed.copy(
     rarity = "COMMON",
     phenomenonName = "Névoa",
     validationStatus = "PENDING",
+    // Deliberately not the weather-mismatch reason: this is the branch that used to be wrong on
+    // this screen (a hardcoded "não bateram com o clima" sentence for every reason), so the
+    // preview exercises the case that would still look broken if `reasonCopyFor` were reverted.
+    unconfirmedReason = "MOCK_LOCATION",
     // Zero, because that is what the backend returns on every unconfirmed path.
     xpAwarded = 0
 )

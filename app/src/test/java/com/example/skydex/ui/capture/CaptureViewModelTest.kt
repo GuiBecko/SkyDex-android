@@ -160,29 +160,76 @@ class CaptureViewModelTest {
         viewModel.onPhotoTaken(jpeg())
         advanceUntilIdle()
 
-        assertNotNull(viewModel.state.value.errorMessage)
+        // A photo rejection, so it lands in `photoMessage`, not `errorMessage` — see
+        // `CaptureUiState.photoMessage`.
+        assertNotNull(viewModel.state.value.photoMessage)
         assertNull(viewModel.state.value.uploadedPhotoUrl)
         // Not submitting, not saved — the user can simply take another photo.
         assertFalse(viewModel.state.value.submitting)
     }
 
+    /**
+     * The whole reason Task 8 uploads eagerly instead of at Save time: the rejection has to land
+     * *while the user is still typing*, not vanish the instant they touch a text field. Before this
+     * fix `onTitleChanged`/`onDescriptionChanged` cleared the same `errorMessage` the eager upload
+     * wrote into, so the next keystroke erased the 422 the user had not even finished reading.
+     */
+    @Test
+    fun `an eager 422 survives the user typing the title and description`() = runTest(dispatcher) {
+        val gateway = FakeCaptureGateway(
+            uploadResult = Result.failure(
+                HttpException(
+                    Response.error<Any>(
+                        422,
+                        """{"error":"This photo does not look like the sky"}"""
+                            .toResponseBody("application/json".toMediaType())
+                    )
+                )
+            )
+        )
+        val viewModel = CaptureViewModel(gateway, logWarning = noLogging) { Coordinates(-30.0, -51.0) }
+
+        viewModel.onPhotoTaken(jpeg())
+        advanceUntilIdle()
+        assertNotNull(
+            "the eager upload must have rejected the photo before typing starts",
+            viewModel.state.value.photoMessage
+        )
+
+        viewModel.onTitleChanged("Tempestade")
+        assertNotNull(
+            "a keystroke in the title must not erase a photo rejection",
+            viewModel.state.value.photoMessage
+        )
+
+        viewModel.onDescriptionChanged("Raios sobre o bairro")
+        assertNotNull(
+            "a keystroke in the description must not erase a photo rejection",
+            viewModel.state.value.photoMessage
+        )
+        assertTrue(viewModel.state.value.photoMessage!!.title.contains("céu"))
+    }
+
     @Test
     fun `a retake abandons the previous upload`() = runTest(dispatcher) {
-        val gateway = FakeCaptureGateway()
-        val gate = CompletableDeferred<Unit>()
-        gateway.uploadGate = gate
+        // `SuspendingUploadGateway`, not `FakeCaptureGateway`: the fake's `uploadGate` blocks
+        // *every* call on one shared gate and returns the same constant path for both photos, so
+        // the abandoned result and the correct one are indistinguishable — the very thing this
+        // test is supposed to catch. Only the per-file path this gateway returns can pin it.
+        val gateway = SuspendingUploadGateway()
         val viewModel = CaptureViewModel(gateway) { Coordinates(-30.0, -51.0) }
 
         val first = jpeg("first.jpg")
         viewModel.onPhotoTaken(first)
         val second = jpeg("second.jpg")
         viewModel.onPhotoTaken(second)
-        gate.complete(Unit)
+        gateway.firstUpload.complete(Unit)
         advanceUntilIdle()
 
         // The path from the abandoned upload must never be cached against the photo on screen:
         // saving it would file the capture under an image the user cannot see any more.
         assertEquals(second, viewModel.state.value.photoFile)
+        assertEquals("/api/photos/second.jpg", viewModel.state.value.uploadedPhotoUrl)
     }
 
     @Test
@@ -281,7 +328,9 @@ class CaptureViewModelTest {
         advanceUntilIdle()
 
         assertEquals(0, gateway.createdRequests.size)
-        assertNotNull(viewModel.state.value.errorMessage)
+        // A photo-upload failure, so it lands in `photoMessage`, not `errorMessage` — see
+        // `CaptureUiState.photoMessage`.
+        assertNotNull(viewModel.state.value.photoMessage)
         assertEquals(false, viewModel.state.value.saved)
     }
 
@@ -613,6 +662,98 @@ class CaptureViewModelTest {
         assertEquals(listOf(first, second), gateway.uploadedFiles)
         assertEquals("/api/photos/second.jpg", gateway.createdRequests.single().photoUrl)
     }
+
+    /**
+     * Kills the mutation the review found untested: `onPhotoTaken`'s eager-failure write made
+     * unconditional. Photo A's upload is parked; the user retakes to B, whose own eager upload
+     * resolves immediately; only then does A's upload answer, with a rejection. That rejection
+     * belongs to a photo the user can no longer see and must never reach [CaptureUiState] against
+     * B.
+     */
+    @Test
+    fun `a stale eager-upload failure does not overwrite the photo the user retook to`() =
+        runTest(dispatcher) {
+            val rejection = HttpException(
+                Response.error<Any>(
+                    422,
+                    """{"error":"This photo does not look like the sky"}"""
+                        .toResponseBody("application/json".toMediaType())
+                )
+            )
+            val gateway = SuspendingUploadGateway(firstUploadResult = Result.failure(rejection))
+            val viewModel =
+                CaptureViewModel(gateway, logWarning = noLogging) { Coordinates(-30.0, -51.0) }
+            val first = jpeg("first.jpg")
+            val second = jpeg("second.jpg")
+
+            viewModel.onPhotoTaken(first) // parks inside the gateway
+            viewModel.onPhotoTaken(second) // its own eager upload is the *second* call: not parked
+            advanceUntilIdle()
+
+            assertEquals(second, viewModel.state.value.photoFile)
+            assertEquals("/api/photos/second.jpg", viewModel.state.value.uploadedPhotoUrl)
+            assertNull(viewModel.state.value.photoMessage)
+
+            gateway.firstUpload.complete(Unit) // first's upload now answers, rejected
+            advanceUntilIdle()
+
+            assertEquals(second, viewModel.state.value.photoFile)
+            assertEquals("/api/photos/second.jpg", viewModel.state.value.uploadedPhotoUrl)
+            assertNull(
+                "a stale eager-upload rejection must not surface against the photo now on screen",
+                viewModel.state.value.photoMessage
+            )
+        }
+
+    /**
+     * Kills the fourth-write mutation the review found: `submit`'s cached-upload failure branch
+     * made unconditional. Photo A's upload is parked; `submit` awaits it; the user retakes to B
+     * before A answers, and B's own eager upload succeeds. Only then does A's cached job resolve
+     * to a rejection. That rejection belongs to A — already abandoned — not to B, which the server
+     * has already accepted.
+     */
+    @Test
+    fun `submit's cached-upload failure is not shown against a photo the user retook to`() =
+        runTest(dispatcher) {
+            val rejection = HttpException(
+                Response.error<Any>(
+                    422,
+                    """{"error":"This photo does not look like the sky"}"""
+                        .toResponseBody("application/json".toMediaType())
+                )
+            )
+            val gateway = SuspendingUploadGateway(firstUploadResult = Result.failure(rejection))
+            val viewModel = CaptureViewModel(gateway, logWarning = noLogging) {
+                Coordinates(-30.0346, -51.2177)
+            }
+            val first = jpeg("first.jpg")
+            val second = jpeg("second.jpg")
+
+            viewModel.refreshLocation()
+            advanceUntilIdle()
+            viewModel.onTitleChanged("Tempestade")
+            viewModel.onDescriptionChanged("Raios")
+            viewModel.onPhotoTaken(first)
+            viewModel.submit() // uploadedPhotoUrl is null, so this awaits the parked pending job
+            advanceUntilIdle()
+
+            viewModel.onPhotoTaken(second) // its own eager upload is not parked
+            advanceUntilIdle()
+            assertEquals("/api/photos/second.jpg", viewModel.state.value.uploadedPhotoUrl)
+
+            gateway.firstUpload.complete(Unit) // the awaited job now answers, rejected
+            advanceUntilIdle()
+
+            assertEquals(second, viewModel.state.value.photoFile)
+            assertEquals("/api/photos/second.jpg", viewModel.state.value.uploadedPhotoUrl)
+            assertFalse(viewModel.state.value.submitting)
+            assertFalse(viewModel.state.value.saved)
+            assertTrue(gateway.createdRequests.isEmpty())
+            assertNull(
+                "the abandoned photo's rejection must not be shown against the one now on screen",
+                viewModel.state.value.photoMessage
+            )
+        }
 
     /**
      * Same shape as HomeScreen's: `CaptureScreen`'s `LaunchedEffect(Unit)` re-runs on every Activity
@@ -955,7 +1096,7 @@ class CaptureViewModelTest {
         assertNull("the dismissed reward must stay dismissed", viewModel.state.value.reward)
     }
 
-    /** A ready-to-submit ViewModel: located, titled, described, phenomenon chosen, photo taken. */
+    /** A ready-to-submit ViewModel: located, titled, described, photo taken. */
     private fun TestScope.readyToSubmit(
         gateway: CaptureGateway,
         profiles: FakeProfileReader? = null,
@@ -1143,9 +1284,14 @@ private class FakeProfileReader(
  * The returned path names the file (`/api/photos/second.jpg`) rather than being a constant, because
  * these tests are about *which* photo a capture was filed under — a fixed URL would make the wrong
  * photo and the right one indistinguishable in the assertion.
+ *
+ * @param firstUploadResult what the *first* call resolves to once released, or `null` for the
+ *   default success naming the file. Set to a [Result.failure] to test the abandoned-upload
+ *   failure paths, where the interleaving matters just as much as it does for the success case.
  */
 private class SuspendingUploadGateway(
-    private val creates: FakeCaptureGateway = FakeCaptureGateway()
+    private val creates: FakeCaptureGateway = FakeCaptureGateway(),
+    private val firstUploadResult: Result<String>? = null
 ) : CaptureGateway {
 
     val firstUpload = CompletableDeferred<Unit>()
@@ -1154,7 +1300,10 @@ private class SuspendingUploadGateway(
 
     override suspend fun uploadPhoto(file: File): Result<String> {
         uploadedFiles += file
-        if (uploadedFiles.size == 1) firstUpload.await()
+        if (uploadedFiles.size == 1) {
+            firstUpload.await()
+            firstUploadResult?.let { return it }
+        }
         return Result.success("/api/photos/${file.name}")
     }
 

@@ -96,10 +96,10 @@ import kotlin.math.roundToInt
  * still, so that branch drops the XP, the glow and the trophy and explains itself through
  * [SkyDexNotice] in the app's settled amber voice.
  *
- * The backend used to be silently taken back off the server: the app deleted an unconfirmed
- * capture the instant the create response named it, on the theory that a machine's opinion of a
- * photograph was reason enough to destroy it with no explanation and nothing the user could do
- * about it. That was the wrong call — the model may be the one that is wrong — so the record now
+ * An unconfirmed capture used to be silently taken back off the server: the app deleted it the
+ * instant the create response named it, on the theory that a machine's opinion of a photograph
+ * was reason enough to destroy it with no explanation and nothing the user could do about it.
+ * That was the wrong call — the model may be the one that is wrong — so the record now
  * **stays**, and this is the one place that says why: [reasonCopyFor] turns the backend's
  * `unconfirmedReason` into a sentence naming the specific problem, and Meus Registros (see
  * `MyCapturesScreen`) marks the row so it is never mistaken for a confirmed one. See
