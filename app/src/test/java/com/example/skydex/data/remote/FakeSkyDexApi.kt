@@ -7,6 +7,7 @@ import com.example.skydex.data.remote.dto.FriendResponse
 import com.example.skydex.data.remote.dto.LoginRequest
 import com.example.skydex.data.remote.dto.LoginResponse
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
+import com.example.skydex.data.remote.dto.PendingRequestCountResponse
 import com.example.skydex.data.remote.dto.PhotoUploadResponse
 import com.example.skydex.data.remote.dto.ProfileResponse
 import com.example.skydex.data.remote.dto.RegisterRequest
@@ -39,6 +40,8 @@ class FakeSkyDexApi : SkyDexApi {
     var acceptFriendRequestResponse: (String) -> FriendResponse = { unsupported("acceptFriendRequest") }
     var declineFriendRequestResponse: (String) -> Response<Unit> = { unsupported("declineFriendRequest") }
     var friendsResponse: () -> List<FriendResponse> = { unsupported("friends") }
+    var pendingFriendRequestCountResponse: () -> PendingRequestCountResponse =
+        { unsupported("pendingFriendRequestCount") }
     var feedResponse: (Int, Int) -> List<WeatherEventResponse> = { _, _ -> unsupported("feed") }
     var profileResponse: () -> ProfileResponse = { unsupported("profile") }
 
@@ -103,6 +106,9 @@ class FakeSkyDexApi : SkyDexApi {
     }
 
     override suspend fun friends(): List<FriendResponse> = friendsResponse()
+
+    override suspend fun pendingFriendRequestCount(): PendingRequestCountResponse =
+        pendingFriendRequestCountResponse()
 
     override suspend fun feed(page: Int, size: Int): List<WeatherEventResponse> = feedResponse(page, size)
 

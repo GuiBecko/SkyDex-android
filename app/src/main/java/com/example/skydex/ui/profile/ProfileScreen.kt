@@ -99,6 +99,7 @@ private val LogoutBarHeight = 64.dp
 @Composable
 fun ProfileScreen(
     viewModel: ProfileViewModel,
+    pendingInvites: Int,
     onOpenMyCaptures: () -> Unit,
     onOpenFriends: () -> Unit,
     onLoggedOut: () -> Unit,
@@ -181,6 +182,7 @@ fun ProfileScreen(
                     // where the logout bar begins.
                     ProfileBody(
                         profile = current.data,
+                        pendingInvites = pendingInvites,
                         onOpenMyCaptures = onOpenMyCaptures,
                         onOpenFriends = onOpenFriends,
                         modifier = Modifier.weight(1f)
@@ -287,9 +289,14 @@ private fun LogoutBar(onLogoutClick: () -> Unit, modifier: Modifier = Modifier) 
 }
 
 /**
- * The app's ONE sanctioned use of `SkyDexPalette.colors.danger`. Everything else that can fail is
- * amber (`notice`) — red is spent only here, on the single action that throws work away, and only
- * on the confirm side. "Cancelar" stays neutral so the safe choice is not the loud one.
+ * One of the app's **two** sanctioned uses of `SkyDexPalette.colors.danger`; the other is
+ * `FriendsScreen.UnfriendConfirmationDialog`. Everything else that can fail is amber (`notice`) —
+ * red is spent only on the actions that throw work away, and only on the confirm side. "Cancelar"
+ * stays neutral so the safe choice is not the loud one.
+ *
+ * It said "the ONE sanctioned use" until unfriending arrived. Two is the ceiling: both are
+ * irreversible confirmations behind a dialog, and a third would mean red has become the colour for
+ * "careful" rather than for "this is gone".
  */
 @Composable
 private fun LogoutConfirmationDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
@@ -329,6 +336,7 @@ private fun LogoutConfirmationDialog(onConfirm: () -> Unit, onDismiss: () -> Uni
 @Composable
 private fun ProfileBody(
     profile: ProfileResponse,
+    pendingInvites: Int,
     onOpenMyCaptures: () -> Unit,
     onOpenFriends: () -> Unit,
     modifier: Modifier = Modifier
@@ -341,7 +349,7 @@ private fun ProfileBody(
         contentPadding = PaddingValues(SkyDexSpacing.screenPadding)
     ) {
         item { IdentityCard(profile) }
-        item { StatsRow(profile, onOpenMyCaptures, onOpenFriends) }
+        item { StatsRow(profile, pendingInvites, onOpenMyCaptures, onOpenFriends) }
 
         item {
             Text(
@@ -422,6 +430,7 @@ private const val TrackOnFillAlpha = 0.3f
 @Composable
 private fun StatsRow(
     profile: ProfileResponse,
+    pendingInvites: Int,
     onOpenMyCaptures: () -> Unit,
     onOpenFriends: () -> Unit
 ) {
@@ -453,9 +462,16 @@ private fun StatsRow(
             onClick = null
         )
         StatTile(
+            // The bottom bar's dot says a number is waiting; this tile is the tap that answers it,
+            // so it spends its hint line on the invite instead of on "ver todos". The count itself
+            // stays the friend count — an invite is not a friend until it is accepted.
             value = "${profile.friends}",
             label = "amigos",
-            hint = "ver todos",
+            hint = when {
+                pendingInvites == 1 -> "1 convite!"
+                pendingInvites > 1 -> "$pendingInvites convites!"
+                else -> "ver todos"
+            },
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight(),
@@ -695,6 +711,7 @@ private fun ProfilePreviewScaffold(staleMessage: UiMessage? = null) {
             }
             ProfileBody(
                 PreviewProfile,
+                pendingInvites = 2,
                 onOpenMyCaptures = {},
                 onOpenFriends = {},
                 modifier = Modifier.weight(1f)
