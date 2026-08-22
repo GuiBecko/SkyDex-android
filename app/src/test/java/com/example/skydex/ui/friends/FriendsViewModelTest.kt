@@ -32,7 +32,7 @@ class FriendsViewModelTest {
     @Test
     fun `loads friends and pending requests on construction`() = runTest(dispatcher) {
         val gateway = FakeSocialGateway(
-            friends = listOf(FriendResponse("u1", "Alice", "alice@skydex.com", "2026-08-01T10:00:00Z")),
+            friends = listOf(FriendResponse("f1", "u1", "Alice", "alice@skydex.com", "2026-08-01T10:00:00Z")),
             requests = listOf(
                 FriendRequestResponse("r1", "u2", "Bob", "bob@skydex.com", "2026-08-02T10:00:00Z")
             )
@@ -184,7 +184,7 @@ class FriendsViewModelTest {
         val viewModel = FriendsViewModel(gateway)
         advanceUntilIdle()
 
-        gateway.friends = listOf(FriendResponse("u2", "Bob", "bob@skydex.com", "2026-08-02T10:00:00Z"))
+        gateway.friends = listOf(FriendResponse("f2", "u2", "Bob", "bob@skydex.com", "2026-08-02T10:00:00Z"))
         gateway.requests = emptyList()
         viewModel.accept("r1")
         advanceUntilIdle()
@@ -192,5 +192,46 @@ class FriendsViewModelTest {
         assertEquals(listOf("r1"), gateway.accepted)
         assertEquals(1, viewModel.state.value.friends.size)
         assertEquals(0, viewModel.state.value.requests.size)
+    }
+
+    @Test
+    fun `unfriending sends the friendship id, not the user id, and reloads`() = runTest(dispatcher) {
+        val gateway = FakeSocialGateway(
+            friends = listOf(FriendResponse("f9", "u9", "Bob", "bob@skydex.com", "2026-08-02T10:00:00Z"))
+        )
+        val viewModel = FriendsViewModel(gateway)
+        advanceUntilIdle()
+
+        gateway.friends = emptyList()
+        viewModel.unfriend(viewModel.state.value.friends.single())
+        advanceUntilIdle()
+
+        // "f9", never "u9". The delete route addresses the relationship; handing it the friend's own
+        // id 404s, and the screen would report a failure for a friendship that is still there.
+        assertEquals(listOf("f9"), gateway.declined)
+        assertEquals(0, viewModel.state.value.friends.size)
+        assertNull(viewModel.state.value.message)
+    }
+
+    /** Same reasoning as the failed decline above: the list must match the server either way. */
+    @Test
+    fun `a failed unfriend still reloads the lists`() = runTest(dispatcher) {
+        val gateway = FakeSocialGateway(
+            friends = listOf(FriendResponse("f9", "u9", "Bob", "bob@skydex.com", "2026-08-02T10:00:00Z"))
+        )
+        gateway.declineResult = Result.failure(IOException("nope"))
+        val viewModel = FriendsViewModel(gateway)
+        advanceUntilIdle()
+
+        gateway.friends = emptyList()
+        viewModel.unfriend(FriendResponse("f9", "u9", "Bob", "bob@skydex.com", "2026-08-02T10:00:00Z"))
+        advanceUntilIdle()
+
+        assertEquals(
+            "a failed unfriend must still refresh, or a friend who is already gone stays on screen",
+            0,
+            viewModel.state.value.friends.size
+        )
+        assertEquals("Sem conexão", viewModel.state.value.message?.title)
     }
 }

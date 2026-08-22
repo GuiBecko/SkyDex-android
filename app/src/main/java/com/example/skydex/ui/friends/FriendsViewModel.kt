@@ -105,6 +105,8 @@ class FriendsViewModel(private val social: SocialGateway) : ViewModel() {
     }
 
     /**
+     * Refuses a pending invite.
+     *
      * Refreshes on **both** branches, unlike [accept] and [sendRequest], and deliberately.
      *
      * Decline is a delete: if it failed the row may still be gone anyway, and if the client merely
@@ -117,9 +119,24 @@ class FriendsViewModel(private val social: SocialGateway) : ViewModel() {
      * right in order to show the truth. Re-reading the server's list costs one request and cannot
      * be wrong; the message still tells the user the call did not go through.
      */
-    fun decline(requestId: String) {
+    fun decline(requestId: String) = removeFriendship(requestId)
+
+    /**
+     * Removes an accepted friend. The **same** call as [decline] — one endpoint, one deleted row —
+     * split into two named methods because the two verbs mean opposite things to the user and the
+     * screen has to say which one it is doing.
+     *
+     * Takes the whole [FriendResponse] rather than an id string **on purpose**. The row carries two
+     * UUIDs, `friendshipId` and `userId`, and only the first names a row the delete route can find;
+     * the second 404s. A `String` parameter would put that choice in the screen, where no unit test
+     * can reach it — this app has no instrumented UI suite — so the pick happens here instead, one
+     * line below, under the test `unfriending sends the friendship id, not the user id`.
+     */
+    fun unfriend(friend: FriendResponse) = removeFriendship(friend.friendshipId)
+
+    private fun removeFriendship(id: String) {
         viewModelScope.launch {
-            social.decline(requestId)
+            social.removeFriendship(id)
                 .onFailure { failure ->
                     _state.update { it.copy(message = failure.toUiMessage(ErrorContext.FRIENDS)) }
                 }

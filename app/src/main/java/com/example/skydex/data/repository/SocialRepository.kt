@@ -25,15 +25,18 @@ class SocialRepository(private val api: SkyDexApi) : SocialGateway {
      * `declineFriendRequest` returns the raw [retrofit2.Response] because Retrofit 2.9.0 cannot map
      * the backend's empty 204 onto a non-null `Unit`. That in turn means an unsuccessful status
      * arrives here as an ordinary value, so [resultOf] alone would report a 403 or a 404 as a
-     * *successful* decline. Convert it to a failure explicitly.
+     * *successful* delete. Convert it to a failure explicitly.
      */
-    override suspend fun decline(requestId: String): Result<Unit> = resultOf {
-        val response = api.declineFriendRequest(requestId)
+    override suspend fun removeFriendship(id: String): Result<Unit> = resultOf {
+        val response = api.declineFriendRequest(id)
         if (!response.isSuccessful) throw HttpException(response)
     }
 
     override suspend fun friends(): Result<List<FriendResponse>> =
         resultOf { api.friends() }
+
+    override suspend fun pendingRequestCount(): Result<Int> =
+        resultOf { api.pendingFriendRequestCount().count }
 
     override suspend fun feed(page: Int, size: Int): Result<List<WeatherEventResponse>> =
         resultOf { api.feed(page, size) }

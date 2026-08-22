@@ -11,6 +11,7 @@ import com.example.skydex.data.repository.SkyDexRepository
 import com.example.skydex.data.repository.SocialRepository
 import com.example.skydex.data.session.SessionStore
 import com.example.skydex.ui.detail.CaptureRegistry
+import com.example.skydex.ui.social.PendingInvitesStore
 import com.example.skydex.util.DeviceLocation
 
 /**
@@ -53,6 +54,12 @@ object ServiceLocator {
     val socialRepository: SocialRepository by lazy { SocialRepository(api) }
 
     val profileRepository: ProfileRepository by lazy { ProfileRepository(api) }
+
+    /**
+     * Process-scoped, like [captureRegistry] and for a related reason: its reader is the navigation
+     * shell rather than any one screen, so it cannot live in a ViewModel that dies with its tab.
+     */
+    val pendingInvitesStore: PendingInvitesStore by lazy { PendingInvitesStore(socialRepository) }
 
     val deviceLocation: DeviceLocation by lazy { DeviceLocation(requireContext()) }
 

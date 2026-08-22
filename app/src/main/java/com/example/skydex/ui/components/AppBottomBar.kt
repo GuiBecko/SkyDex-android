@@ -15,6 +15,8 @@ import androidx.compose.material.icons.filled.CatchingPokemon
 import androidx.compose.material.icons.filled.DynamicFeed
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -26,6 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.skydex.ui.navigation.Routes
@@ -46,6 +50,13 @@ private val UnselectedIconSize = SkyDexSpacing.xl
 private data class BarItem(val route: String, val icon: ImageVector, val label: String)
 
 /**
+ * Above this the badge shows `9+` instead of the number. Not a design flourish: the dot is drawn
+ * over a fixed-size icon slot, and a third digit pushes it wide enough to collide with the
+ * neighbouring tab.
+ */
+private const val MaxBadgeCount = 9
+
+/**
  * The app's four top-level tabs.
  *
  * It has exactly these four items, which is why `SkyDexNavHost.BAR_ROUTES` must contain exactly
@@ -61,8 +72,13 @@ private data class BarItem(val route: String, val icon: ImageVector, val label: 
  * - `label` existed but was only fed to `contentDescription`, leaving a bar of bare icons; the
  *   labels are now drawn, at `labelLarge`.
  */
+/**
+ * @param pendingInvites friend invites waiting to be answered. Badges the **Perfil** tab, because
+ *   that is where the route to Amigos lives — `FRIENDS` is a pushed destination and has no tab of
+ *   its own to badge. Zero draws nothing.
+ */
 @Composable
-fun AppBottomBar(currentRoute: String, onNavigate: (String) -> Unit) {
+fun AppBottomBar(currentRoute: String, pendingInvites: Int = 0, onNavigate: (String) -> Unit) {
     val items = listOf(
         BarItem(Routes.FEED, Icons.Default.DynamicFeed, "Feed"),
         BarItem(Routes.HOME, Icons.Default.Home, "Início"),
@@ -88,6 +104,7 @@ fun AppBottomBar(currentRoute: String, onNavigate: (String) -> Unit) {
                     BarTab(
                         item = item,
                         selected = currentRoute == item.route,
+                        badgeCount = if (item.route == Routes.PROFILE) pendingInvites else 0,
                         onClick = { onNavigate(item.route) },
                         modifier = Modifier.weight(1f)
                     )
@@ -106,6 +123,7 @@ fun AppBottomBar(currentRoute: String, onNavigate: (String) -> Unit) {
 private fun BarTab(
     item: BarItem,
     selected: Boolean,
+    badgeCount: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -124,19 +142,44 @@ private fun BarTab(
             .padding(vertical = SkyDexSpacing.sm),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Fixed-height slot: the icon animates inside it so the label below never moves.
+        // Fixed-height slot: the icon animates inside it so the label below never moves. The badge
+        // is drawn inside the same slot, so a tab that gains one does not grow taller than its
+        // neighbours and shove its own label down.
         Box(
             modifier = Modifier.size(SelectedIconSize),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                modifier = Modifier.size(iconSize),
-                imageVector = item.icon,
-                // The label is right underneath and `Role.Tab` already announces selection state;
-                // a contentDescription here would make the reader say the name twice.
-                contentDescription = null,
-                tint = tint
-            )
+            BadgedBox(
+                badge = {
+                    if (badgeCount > 0) {
+                        Badge {
+                            Text(
+                                // The count is the whole point — a bare dot says "something
+                                // happened" and makes the user open the screen to find out how much.
+                                text = if (badgeCount > MaxBadgeCount) "$MaxBadgeCount+" else "$badgeCount",
+                                // Announced here rather than on the icon: this is the part of the
+                                // tab a reader has no other way to learn about.
+                                modifier = Modifier.semantics {
+                                    contentDescription = if (badgeCount == 1) {
+                                        "1 convite de amizade"
+                                    } else {
+                                        "$badgeCount convites de amizade"
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            ) {
+                Icon(
+                    modifier = Modifier.size(iconSize),
+                    imageVector = item.icon,
+                    // The label is right underneath and `Role.Tab` already announces selection
+                    // state; a contentDescription here would make the reader say the name twice.
+                    contentDescription = null,
+                    tint = tint
+                )
+            }
         }
         Text(
             text = item.label,
@@ -144,6 +187,22 @@ private fun BarTab(
             color = tint,
             modifier = Modifier.padding(top = SkyDexSpacing.xs)
         )
+    }
+}
+
+@Preview(name = "Bottom bar — invites pending", showBackground = true)
+@Composable
+private fun AppBottomBarBadgePreview() {
+    SkyDexTheme {
+        AppBottomBar(currentRoute = Routes.FEED, pendingInvites = 3, onNavigate = {})
+    }
+}
+
+@Preview(name = "Bottom bar — invites overflowing", showBackground = true)
+@Composable
+private fun AppBottomBarBadgeOverflowPreview() {
+    SkyDexTheme {
+        AppBottomBar(currentRoute = Routes.FEED, pendingInvites = 42, onNavigate = {})
     }
 }
 

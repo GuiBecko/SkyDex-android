@@ -180,6 +180,41 @@ class SkyDexApiTest {
     }
 
     @Test
+    fun `the pending count is asked at its own route and unwrapped`() {
+        val api = apiAnswering(code = 200, body = """{"count":7}""", token = "abc123")
+
+        val body = runBlocking { api.pendingFriendRequestCount() }
+
+        assertEquals(7, body.count)
+        // Pinned because the badge asks for this on every navigation and a wrong path fails
+        // silently: the store swallows the failure and keeps its last count, so the dot would just
+        // stop updating with nothing in the logs.
+        assertEquals("/api/friends/requests/count", received.single().target)
+        assertEquals("GET", received.single().method)
+    }
+
+    /**
+     * `friendshipId` and `userId` are both UUIDs in the same object, and only one of them names a
+     * row the delete route can find. Nothing downstream can tell them apart, so this pins the
+     * mapping at the wire: swap the two names in the backend and this fails instead of the app
+     * quietly 404ing every unfriend.
+     */
+    @Test
+    fun `the friends list keeps the friendship id and the user id apart`() {
+        val api = apiAnswering(
+            code = 200,
+            body = """[{"friendshipId":"f-1","userId":"u-1","name":"Alice",""" +
+                """"email":"alice@skydex.com","friendsSince":"2026-08-01T10:00:00Z"}]""",
+            token = "abc123"
+        )
+
+        val friend = runBlocking { api.friends() }.single()
+
+        assertEquals("f-1", friend.friendshipId)
+        assertEquals("u-1", friend.userId)
+    }
+
+    @Test
     fun `authenticated calls carry the bearer token all the way to the wire`() {
         val api = apiAnswering(code = 200, body = "[]", token = "abc123")
 

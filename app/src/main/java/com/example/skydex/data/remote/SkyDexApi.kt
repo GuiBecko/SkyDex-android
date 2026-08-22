@@ -4,6 +4,7 @@ import com.example.skydex.data.remote.dto.CreateWeatherEventRequest
 import com.example.skydex.data.remote.dto.FriendRequestBody
 import com.example.skydex.data.remote.dto.FriendRequestResponse
 import com.example.skydex.data.remote.dto.FriendResponse
+import com.example.skydex.data.remote.dto.PendingRequestCountResponse
 import com.example.skydex.data.remote.dto.LoginRequest
 import com.example.skydex.data.remote.dto.LoginResponse
 import com.example.skydex.data.remote.dto.NearbyPhenomenonResponse
@@ -68,6 +69,10 @@ interface SkyDexApi {
 
     @GET("api/friends/requests")
     suspend fun incomingFriendRequests(): List<FriendRequestResponse>
+
+    /** The invite badge's source. A number, so it is cheap to ask for on every navigation. */
+    @GET("api/friends/requests/count")
+    suspend fun pendingFriendRequestCount(): PendingRequestCountResponse
 
     @POST("api/friends/requests/{id}/accept")
     suspend fun acceptFriendRequest(@Path("id") id: String): FriendResponse

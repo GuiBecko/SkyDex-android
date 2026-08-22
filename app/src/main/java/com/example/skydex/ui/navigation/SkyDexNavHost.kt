@@ -13,6 +13,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -172,6 +174,25 @@ fun SkyDexNavHost(session: Session?, modifier: Modifier = Modifier) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route ?: Routes.LOGIN
     val startDestination = remember { if (session == null) Routes.LOGIN else Routes.HOME }
+    val pendingInvites by ServiceLocator.pendingInvitesStore.count.collectAsState()
+
+    /**
+     * The invite badge's only clock. There is no push channel, so the count is re-read on every
+     * navigation — one `COUNT` query, which is why the endpoint returns a number instead of the
+     * request list. Keying on [currentRoute] rather than on `Unit` is what makes accepting an invite
+     * and walking back out of Amigos update the dot.
+     *
+     * The signed-out routes clear it instead of asking. Two reasons: there is no token to ask with,
+     * and this store outlives the session, so a second account signing in on the same device would
+     * otherwise inherit the first one's badge.
+     */
+    LaunchedEffect(currentRoute) {
+        if (currentRoute == Routes.LOGIN || currentRoute == Routes.REGISTER) {
+            ServiceLocator.pendingInvitesStore.clear()
+        } else {
+            ServiceLocator.pendingInvitesStore.refresh()
+        }
+    }
 
     /**
      * Opens one capture's detail page.
@@ -202,7 +223,7 @@ fun SkyDexNavHost(session: Session?, modifier: Modifier = Modifier) {
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             if (currentRoute in BAR_ROUTES) {
-                AppBottomBar(currentRoute) { route ->
+                AppBottomBar(currentRoute, pendingInvites) { route ->
                     navController.navigate(route) {
                         popUpTo(Routes.HOME) { saveState = true }
                         launchSingleTop = true
@@ -369,6 +390,7 @@ fun SkyDexNavHost(session: Session?, modifier: Modifier = Modifier) {
                 }
                 ProfileScreen(
                     viewModel = vm,
+                    pendingInvites = pendingInvites,
                     onOpenMyCaptures = { navController.navigate(Routes.MY_CAPTURES) },
                     onOpenFriends = { navController.navigate(Routes.FRIENDS) },
                     onLoggedOut = {
