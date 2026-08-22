@@ -96,15 +96,19 @@ import kotlin.math.roundToInt
  * still, so that branch drops the XP, the glow and the trophy and explains itself through
  * [SkyDexNotice] in the app's settled amber voice.
  *
- * What that branch may **not** do is claim the capture is stored: `CaptureViewModel` issues a
- * `DELETE` for an unconfirmed capture the moment the create returns, so copy promising the photo is
- * waiting in Meus Registros would be false. It does not announce the deletion either — there is
- * nothing the user can do about it, and a notice about a record they never saw would be noise. See
- * [UnconfirmedHeader] for the copy and `CaptureViewModel.discardUnconfirmed` for the rule.
+ * An unconfirmed capture used to be silently taken back off the server: the app deleted it the
+ * instant the create response named it, on the theory that a machine's opinion of a photograph
+ * was reason enough to destroy it with no explanation and nothing the user could do about it.
+ * That was the wrong call — the model may be the one that is wrong — so the record now
+ * **stays**, and this is the one place that says why: [reasonCopyFor] turns the backend's
+ * `unconfirmedReason` into a sentence naming the specific problem, and Meus Registros (see
+ * `MyCapturesScreen`) marks the row so it is never mistaken for a confirmed one. See
+ * [UnconfirmedHeader] for where that sentence is shown.
  *
- * The same constraint applies to the buttons, not just the words: that branch promotes "Registrar
- * outro" to the primary action, because a filled button pointing at Meus Registros implies the same
- * thing the copy is no longer allowed to say. See [RewardCard].
+ * The buttons still promote "Registrar outro" to the primary action on this branch, even though
+ * the record really is in Meus Registros now: it earned no XP and counts towards no species, so
+ * encouraging another attempt is still more useful than sending the user to look at the one that
+ * did not work. See [RewardCard].
  *
  * ## Token compliance
  *
@@ -134,6 +138,8 @@ import kotlin.math.roundToInt
  * @param xpAwarded XP actually granted for this capture. Zero for every unconfirmed path. Decides
  *   whether the number renders at all, independently of [confirmed], so a hypothetical confirmed
  *   capture worth nothing shows the confirmation copy without a meaningless "+0 XP".
+ * @param unconfirmedReason the backend's reason the capture was not confirmed, or `null` on a
+ *   confirmed one. See [reasonCopyFor] for how this turns into the sentence shown on screen.
  * @param bonus level-up and newly unlocked badges, or `null`.
  */
 data class CaptureReward(
@@ -141,6 +147,14 @@ data class CaptureReward(
     val rarity: String,
     val confirmed: Boolean,
     val xpAwarded: Int,
+    /**
+     * The backend's `unconfirmedReason` enum name, or null.
+     *
+     * Held as the raw name rather than as a sealed type on purpose: a backend that adds a fourth
+     * reason must not crash a client that has only three, and [reasonCopyFor] turns an unknown
+     * value into a sentence rather than into an exception.
+     */
+    val unconfirmedReason: String? = null,
     /**
      * The part of the reward the capture response cannot answer.
      *
@@ -153,6 +167,36 @@ data class CaptureReward(
      */
     val bonus: CaptureRewardBonus? = null
 )
+
+/**
+ * The sentence explaining an unconfirmed capture.
+ *
+ * Each reason gets its own, because each implies a different next action — one says the photograph
+ * did not match, one says the phone's position was not believed, one says the journey was not
+ * possible. A single "não foi confirmado" would leave the user with nothing to do differently.
+ *
+ * A pure top-level function, not a composable, for the same reason [presentationOf] is one: the JVM
+ * test source set has no Compose runtime, so the mapping has to be assertable without rendering.
+ *
+ * The fallback is deliberately vague rather than technical: an unknown reason means a newer backend
+ * than this build, and printing the enum name would put `PHOTO_CONTRADICTS_WEATHER` on a
+ * Portuguese screen.
+ */
+fun reasonCopyFor(reason: String?): String = when (reason) {
+    "PHOTO_CONTRADICTS_WEATHER" ->
+        "Sua foto não combinou com o clima registrado nesse lugar e horário. " +
+            "A captura fica guardada, mas sem XP."
+
+    "MOCK_LOCATION" ->
+        "O aparelho informou que a localização veio de um simulador. " +
+            "Desative o app de localização falsa e tente de novo."
+
+    "IMPLAUSIBLE_TRAVEL" ->
+        "Esse ponto ficou distante demais da sua captura anterior para o tempo que passou."
+
+    else ->
+        "Não conseguimos confirmar essa captura. Ela fica guardada, mas sem XP."
+}
 
 /**
  * The optional second half of the reward, obtained by diffing the profile taken before the capture
@@ -316,17 +360,15 @@ fun CaptureRewardOverlay(
  * On a **confirmed** capture, "Ver meus registros" is the payoff. The row is really there, it is
  * worth XP, and looking at the collection it just joined is the whole point of the flow. It leads.
  *
- * On an **unconfirmed** one it is a dead end, and since `CaptureViewModel.discardUnconfirmed`
- * started taking the record back, a provably empty one: the user would arrive in Meus Registros
- * hunting for a capture that is no longer on the server. Copy that no longer claims the record was
- * kept, sitting above a primary button that still points at where it would have been, is the same
- * lie moved from the paragraph into the affordance. So the filled button becomes "Registrar outro"
- * — the one action that can actually help, and the one the copy right above it already ends on.
+ * On an **unconfirmed** one, the row really is in Meus Registros now — it is kept, not deleted —
+ * but it is worth no XP and counts towards no species, so it is not the payoff this button is meant
+ * to lead to. "Registrar outro" is the action that can actually help, and it is the one the copy
+ * right above it already ends on, so it takes the filled button instead.
  *
- * "Ver meus registros" stays as the quiet action rather than being dropped for two reasons. It is
- * the only route *off* this screen (the alternative leaves the user on a blank capture form with
- * the overlay gone), and it is not itself dishonest: the list still holds every capture they have
- * earned, just not this one. Removing it would trade a mild misdirection for a real dead end.
+ * "Ver meus registros" stays as the quiet action rather than being dropped: it is the only route
+ * *off* this screen (the alternative leaves the user on a blank capture form with the overlay
+ * gone), and going there is honest now in a way it never used to be — the capture they just made is
+ * genuinely on the list, marked as unconfirmed rather than missing from it.
  */
 @Composable
 private fun RewardCard(
@@ -545,19 +587,16 @@ private fun XpBloom(xp: Int, rarityColor: Color, weight: Int) {
  * ## What this copy may claim
  *
  * It used to open with "Registro salvo" and close with "Sua foto e seu registro estão guardados em
- * Meus Registros". Both became false the moment `CaptureViewModel.discardUnconfirmed` started
- * taking an unconfirmed capture back off the server, so both are gone. The replacement is held to
- * two rules that pull in opposite directions and are both non-negotiable:
+ * Meus Registros" — both written when the capture really was about to be deleted, which made both
+ * of them a lie. Now the deletion itself is gone: the record is kept, for the reason explained in
+ * this file's top-level doc. So this copy is held to the opposite rule from the one it used to
+ * follow — it **must** say the capture is kept, because that is now true, and it must say *why* it
+ * earned no XP rather than leaving that vague, since [reasonCopyFor] gives every reason its own
+ * sentence for exactly that purpose.
  *
- * - **It promises no storage.** Nothing here says the capture, the photo or the record is kept
- *   anywhere. The user is not sent looking for something that will not be there.
- * - **It does not announce the deletion.** There is no action to take and no failure to report, so
- *   naming the DELETE would only add alarm to a moment that is already a small disappointment.
- *
- * What is left is the true, useful half: the weather data did not match, so this one earned
- * nothing, and the way forward is to try again when the phenomenon is actually overhead. It does
- * not promise a re-check, because the backend never re-validates a capture — claiming otherwise
- * would be a lie the app could not keep.
+ * It still does not promise a re-check: the backend never re-validates a stored capture, so
+ * claiming one would be a lie the app could not keep. The way forward stays "try again", not "wait
+ * and see".
  *
  * The rarity pill is deliberately absent here. Rarity is the *reward* axis; showing "LENDÁRIO" next
  * to a capture that earned nothing would read as a prize that was then taken away.
@@ -580,15 +619,11 @@ private fun UnconfirmedHeader(reward: CaptureReward) {
 
     SkyDexNotice(
         message = UiMessage(
-            title = "A foto não bateu com o tempo da região",
-            // Non-blaming by construction: "não coincidiram" is about the two datasets, not about
-            // the user, and the aside about the data source names the case where the fault is
-            // certainly not theirs. Ends pointing at the way out — which is also the overlay's
-            // own secondary action, "Registrar outro".
-            body = "Comparamos sua foto com os dados meteorológicos da sua região e eles não " +
-                "coincidiram desta vez — às vezes a fonte de dados também fica indisponível. " +
-                "Essa captura não valeu XP. Quando o fenômeno aparecer de novo por aí, é só " +
-                "registrar outro.",
+            title = "Veja o motivo",
+            // The title stays generic on purpose: it has to sit above whichever of the three
+            // reasons (or the fallback) reasonCopyFor produces, and each already opens by naming
+            // its own specific problem.
+            body = reasonCopyFor(reward.unconfirmedReason),
             tone = Tone.NOTICE
         )
     )
@@ -739,7 +774,8 @@ private val UnconfirmedReward = CaptureReward(
     rarity = "RARE",
     confirmed = false,
     // Zero, because that is what the backend returns on every unconfirmed path — not a placeholder.
-    xpAwarded = 0
+    xpAwarded = 0,
+    unconfirmedReason = "PHOTO_CONTRADICTS_WEATHER"
 )
 
 private val LevelUpReward = LegendaryReward.copy(

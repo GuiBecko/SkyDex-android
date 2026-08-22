@@ -82,7 +82,9 @@ class ErrorPresenterTest {
      */
     @Test
     fun `a 5xx says the fault is not the user's`() {
-        val message = httpError(503, """{"error":"Service unavailable"}""")
+        // 500, not 503: a 503 is now its own case (see below) — an upstream that is briefly
+        // unavailable, not the outage this test is about.
+        val message = httpError(500, """{"error":"Internal server error"}""")
             .toUiMessage(ErrorContext.LOGIN)
 
         assertEquals("O SkyDex está fora do ar", message.title)
@@ -155,7 +157,6 @@ class ErrorPresenterTest {
         val cases = mapOf(
             "This photo has already been used for a capture" to "Essa foto já virou um registro",
             "Photo has expired; take a new one" to "Essa foto expirou",
-            "Unknown phenomenon: THUNDERSTORM" to "Não reconhecemos esse fenômeno",
             "File is not a JPEG image" to "Essa imagem não serve",
             "File is not a PNG image" to "Essa imagem não serve",
             "Only JPEG and PNG images are accepted" to "Essa imagem não serve",
@@ -168,23 +169,10 @@ class ErrorPresenterTest {
             assertEquals("for backend message: $backend", expectedTitle, message.title)
         }
 
-        // And they are genuinely distinct, not four aliases of one string — collapsing them is the
+        // And they are genuinely distinct, not aliases of one string — collapsing them is the
         // regression this guards, since each one has a different way out.
         val titles = cases.values.toSet()
-        assertEquals("the distinct 400s must stay distinct", 5, titles.size)
-    }
-
-    /**
-     * The one the audit called out by name: the server appends the enum to the message, so
-     * forwarding it printed `THUNDERSTORM` — an internal domain constant — at the user.
-     */
-    @Test
-    fun `the unknown-phenomenon enum never reaches the message`() {
-        val message = httpError(400, """{"error":"Unknown phenomenon: HAILSTORM"}""")
-            .toUiMessage(ErrorContext.CAPTURE_SAVE)
-
-        assertFalse(shown(message).contains("HAILSTORM"))
-        assertFalse(shown(message).contains("Unknown"))
+        assertEquals("the distinct 400s must stay distinct", 4, titles.size)
     }
 
     // ------------------------------------------------------------------------------------------
@@ -300,6 +288,51 @@ class ErrorPresenterTest {
     }
 
     // ------------------------------------------------------------------------------------------
+    // 422 and 503 — a rejected photo is not an outage, and an outage does not spend the photo
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    fun `a 422 on upload tells the user to point the camera at the sky`() {
+        val message = httpError(422, """{"error":"x"}""").toUiMessage(ErrorContext.PHOTO_UPLOAD)
+
+        // "céu" lands in the title ("Essa foto não parece o céu"); the body carries the
+        // instruction ("Aponte a câmera..."). Check what the user actually reads, combined.
+        assertTrue(shown(message), shown(message).contains("céu"))
+        // Not the 5xx copy: this is not an outage and telling the user "não é você" would send
+        // them to wait for a fix that is never coming.
+        assertFalse(message.title.contains("fora do ar"))
+    }
+
+    @Test
+    fun `a 503 on upload promises that waiting helps`() {
+        val message = httpError(503, """{"error":"x"}""").toUiMessage(ErrorContext.PHOTO_UPLOAD)
+
+        // The title is the only string that distinguishes this branch from `unavailable`'s `else`,
+        // from `generic(PHOTO_UPLOAD)`, and from `ServerDown` — all three share this same body and
+        // action label, so asserting only on those would pass against any of them.
+        assertEquals("Não conseguimos analisar a foto agora", message.title)
+        assertEquals("Tentar de novo", message.actionLabel)
+        assertTrue(message.body, message.body.contains("instantes"))
+    }
+
+    @Test
+    fun `a 503 on save says the photo is safe`() {
+        // This is the whole point of the copy: the backend does not spend the photo on a 503, so
+        // the honest instruction is "press Save again", not "take another photo".
+        val message = httpError(503, """{"error":"x"}""").toUiMessage(ErrorContext.CAPTURE_SAVE)
+
+        assertTrue(message.body, message.body.contains("foto"))
+        assertEquals("Tentar de novo", message.actionLabel)
+    }
+
+    @Test
+    fun `a 500 is still reported as an outage, not as a 503`() {
+        val message = httpError(500, """{"error":"x"}""").toUiMessage(ErrorContext.CAPTURE_SAVE)
+
+        assertTrue(message.title, message.title.contains("fora do ar"))
+    }
+
+    // ------------------------------------------------------------------------------------------
 
     private fun shown(message: UiMessage): String =
         listOfNotNull(message.title, message.body, message.actionLabel).joinToString(" ")
@@ -325,7 +358,6 @@ class ErrorPresenterTest {
             403 to "You cannot add yourself",
             400 to "This photo has already been used for a capture",
             400 to "Photo has expired; take a new one",
-            400 to "Unknown phenomenon: THUNDERSTORM",
             400 to "File is not a JPEG image",
             400 to "File is not a PNG image",
             400 to "Only JPEG and PNG images are accepted",

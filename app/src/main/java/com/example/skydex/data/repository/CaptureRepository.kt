@@ -36,13 +36,19 @@ class CaptureRepository(private val api: SkyDexApi) : CaptureGateway {
     }
 
     /**
+     * `DELETE api/events/{id}`.
+     *
+     * Currently uncalled. It lost its only caller when the capture screen stopped destroying
+     * unconfirmed captures behind the user's back — an unconfirmed capture is now kept and
+     * explained rather than deleted. Kept because the endpoint exists and a user-driven delete on
+     * Meus Registros is the obvious next use.
+     *
      * `deleteCapture` returns the raw [retrofit2.Response], not `Unit`: Retrofit 2.9.0 throws
      * KotlinNullPointerException trying to map the backend's empty 204 body onto a non-null `Unit`
      * return type. That means an unsuccessful status arrives here as a perfectly normal value, so
-     * [resultOf] alone would report a 403 or a 404 as a *successful* delete. Convert it to a
-     * failure explicitly.
+     * [resultOf] alone would report a 403 or a 404 as a *successful* delete.
      */
-    override suspend fun delete(id: String): Result<Unit> = resultOf {
+    suspend fun delete(id: String): Result<Unit> = resultOf {
         val response = api.deleteCapture(id)
         if (!response.isSuccessful) throw HttpException(response)
     }

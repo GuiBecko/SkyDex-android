@@ -81,7 +81,6 @@ class CaptureRepositoryTest {
             photoUrl = "https://example.test/cb.jpg",
             latitude = 0.0,
             longitude = 0.0,
-            phenomenon = "THUNDERSTORM",
             locationIsMock = false
         )
         api.createResponse = { capture }
