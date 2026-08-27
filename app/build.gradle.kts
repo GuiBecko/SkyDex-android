@@ -11,7 +11,7 @@ if (localPropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.example.skydex"
+    namespace = "io.github.guibecko.skydex"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -19,7 +19,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.skydex"
+        applicationId = "io.github.guibecko.skydex"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
