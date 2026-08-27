@@ -66,7 +66,12 @@ class SkyDexApplication : Application(), ImageLoaderFactory {
          */
         const val TILE_USER_AGENT = "SkyDex/1.0 (Android; ${BuildConfig.APPLICATION_ID})"
 
-        /** A stable identifier for the requesting app; OSM expects no live URL here. */
-        const val TILE_REFERER = "https://skydex.app/"
+        /**
+         * OSM's tile usage policy wants a requester it can identify and, if it ever needs to,
+         * contact. This used to be `https://skydex.app/`, a domain nobody involved owns, which
+         * identified nothing. The repository URL is a real page describing a real project with a
+         * real way to reach its author.
+         */
+        const val TILE_REFERER = "https://github.com/GuiBecko/SkyDex-android"
     }
 }

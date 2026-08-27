@@ -29,17 +29,15 @@ android {
         // Where the app looks for the backend, baked in at compile time as BuildConfig.BASE_URL.
         //
         // `local.properties` wins when it defines API_BASE_URL (that file is git-ignored, so each
-        // machine keeps its own address); this literal is the fallback for a fresh clone.
+        // machine keeps its own address); the literal below is the fallback for a fresh clone.
         //
-        // It must be the host's LAN IP, never `localhost` — on a real device `localhost` is the
-        // *phone*, so an app built that way can only reach the backend through an `adb reverse`
-        // tunnel, and it fails with a connection error the moment the tunnel is missing. The
-        // previous fallback was `http://<host>:8080`: a stale address on a subnet this
-        // machine no longer uses, and the wrong port besides — 8080 is Keycloak, the SkyDex backend
-        // is 3002 (`server.port` in the backend's application.properties).
+        // 10.0.2.2 is the Android emulator's alias for the host machine's loopback. It is the one
+        // value that works on a fresh clone without editing anything, because it does not depend
+        // on what network the developer is on. `localhost` would not: inside the emulator that is
+        // the emulated device itself.
         //
-        // Being an IP, this rots when the network changes. If it stops working, put your own
-        // address in `local.properties` rather than editing this line and committing it.
+        // On a *physical* device neither works -- put your machine's LAN address in
+        // `local.properties` rather than editing this line and committing it.
         val apiUrl = properties.getProperty("API_BASE_URL") ?: "\"http://10.0.2.2:3002\""
         buildConfigField("String", "BASE_URL", apiUrl)
     }
