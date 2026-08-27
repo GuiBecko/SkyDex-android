@@ -40,7 +40,7 @@ android {
         //
         // Being an IP, this rots when the network changes. If it stops working, put your own
         // address in `local.properties` rather than editing this line and committing it.
-        val apiUrl = properties.getProperty("API_BASE_URL") ?: "\"http://<host>:3002\""
+        val apiUrl = properties.getProperty("API_BASE_URL") ?: "\"http://10.0.2.2:3002\""
         buildConfigField("String", "BASE_URL", apiUrl)
     }
 
