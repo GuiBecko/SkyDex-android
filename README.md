@@ -19,8 +19,11 @@ Requires Android Studio and JDK 17. Minimum SDK 26, target 36.
 
    `10.0.2.2` is the emulator's alias for your host machine and is the default
    if you set nothing. **On a physical device it will not work** — use your
-   machine's LAN address instead, for example `"http://192.168.0.10:3002"`. The
-   quotes are required: the value is injected verbatim as a `BuildConfig`
+   machine's LAN address instead — `"http://<your-lan-ip>:3002"`, where
+   `<your-lan-ip>` is what `ip addr` (or `ipconfig`) reports for your machine on
+   the network the phone is on.
+
+   The quotes are required: the value is injected verbatim as a `BuildConfig`
    string.
 
 3. Build and run:
